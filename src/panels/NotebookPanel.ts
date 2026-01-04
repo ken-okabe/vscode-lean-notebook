@@ -85,14 +85,46 @@ export class NotebookPanel {
         if (!this._document) { return; }
         const webview = this._panel.webview;
 
-        // Parse the document
-        const text = this._document.getText();
-        const blocks = parseLeanFile(text);
+        try {
+            // Parse the document
+            const text = this._document.getText();
+            const blocks = parseLeanFile(text);
 
-        console.log("NotebookPanel: Sending " + blocks.length + " blocks to webview.");
+            // Fetch diagnostics (e.g. #eval results)
+            const diagnostics = vscode.languages.getDiagnostics(this._document.uri);
 
-        // Send to webview
-        webview.postMessage({ command: 'update', blocks: blocks });
+            // Log diagnostics count for debugging
+            if (diagnostics.length > 0) {
+                console.log("NotebookPanel: Found " + diagnostics.length + " diagnostics.");
+            }
+
+            // Attach output to code blocks
+            blocks.forEach(block => {
+                if (block.type === 'code' && block.range) {
+                    const startLine0 = block.range.startLine - 1;
+                    const endLine0 = block.range.endLine - 1;
+
+                    const blockDiags = diagnostics.filter(d => {
+                        const l = d.range.start.line;
+                        return l >= startLine0 && l <= endLine0;
+                    });
+
+                    if (blockDiags.length > 0) {
+                        // Sort by line
+                        blockDiags.sort((a, b) => a.range.start.line - b.range.start.line);
+                        // Format
+                        block.output = blockDiags.map(d => d.message).join('\n');
+                    }
+                }
+            });
+
+            console.log("NotebookPanel: Sending " + blocks.length + " blocks to webview.");
+
+            // Send to webview
+            webview.postMessage({ command: 'update', blocks: blocks });
+        } catch (e) {
+            console.error("Error in _update:", e);
+        }
     }
 
     private _getWebviewContent(webview: vscode.Webview) {

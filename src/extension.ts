@@ -15,10 +15,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(disposable);
 
-    // Listen for changes
-    vscode.workspace.onDidChangeTextDocument(e => {
-        if (NotebookPanel.currentPanel && e.document.languageId === 'lean4') {
-            NotebookPanel.currentPanel.updateDocument(e.document);
+
+    // Listen for diagnostic changes (e.g. #eval results arriving)
+    vscode.languages.onDidChangeDiagnostics(e => {
+        try {
+            if (NotebookPanel.currentPanel && NotebookPanel.currentPanel._document) {
+                // Check if the event affects the current document
+                if (e.uris.some(uri => uri.toString() === NotebookPanel.currentPanel!._document!.uri.toString())) {
+                    console.log("LeanNotebook: Diagnostics changed for current doc.");
+                    NotebookPanel.currentPanel.updateDocument(NotebookPanel.currentPanel._document);
+                }
+            }
+        } catch (error) {
+            console.error("Error in onDidChangeDiagnostics:", error);
         }
     }, null, context.subscriptions);
 
