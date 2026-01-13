@@ -37,7 +37,7 @@ export class NotebookPanel {
     }
 
     public static createOrShow(extensionUri: vscode.Uri, document: vscode.TextDocument) {
-        const column = vscode.ViewColumn.Beside;
+        const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.Active;
 
         // If we already have a panel, show it.
         if (NotebookPanel.currentPanel) {

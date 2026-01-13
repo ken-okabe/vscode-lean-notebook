@@ -10,7 +10,8 @@
         "Other"
     ],
     "activationEvents": [
-        "onCommand:leannotebook.openPreview"
+        "onCommand:leannotebook.openPreview",
+        "onLanguage:lean4"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -19,6 +20,11 @@
                 "command": "leannotebook.openPreview",
                 "title": "LeanNotebook: Open Preview",
                 "icon": "$(preview)"
+            },
+            {
+                "command": "leannotebook.showSource",
+                "title": "LeanNotebook: Show Source",
+                "icon": "$(code)"
             }
         ],
         "menus": {

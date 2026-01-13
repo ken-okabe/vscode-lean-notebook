@@ -16,6 +16,33 @@ export interface CodeBlock {
 }
 
 /**
+ * Trim leading and trailing empty lines from code blocks
+ * Preserves indentation and internal blank lines
+ */
+function trimEmptyLines(code: string): string {
+    const lines = code.split('\n');
+    
+    // Find first non-empty line
+    let start = 0;
+    while (start < lines.length && lines[start].trim() === '') {
+        start++;
+    }
+    
+    // Find last non-empty line
+    let end = lines.length - 1;
+    while (end >= 0 && lines[end].trim() === '') {
+        end--;
+    }
+    
+    // Return trimmed content
+    if (start > end) {
+        return ''; // All empty
+    }
+    
+    return lines.slice(start, end + 1).join('\n');
+}
+
+/**
  * Naive Regex Parser for Lean 4
  * Splits content by `/-!` (Module Doc) or `/--` (Docstring).
  * Note: This doesn't handle nested comments perfectly but suffices for Phase 1.
@@ -50,7 +77,7 @@ export function parseLeanFile(content: string): NotebookBlock[] {
 
             blocks.push({
                 type: 'code',
-                source: codeContent, // trim? maybe not to preserve indentation
+                source: trimEmptyLines(codeContent),
                 output: undefined,
                 range: {
                     startLine: startLine,
@@ -79,7 +106,7 @@ export function parseLeanFile(content: string): NotebookBlock[] {
 
             blocks.push({
                 type: 'code',
-                source: remaining,
+                source: trimEmptyLines(remaining),
                 range: {
                     startLine: startLine,
                     endLine: startLine + codeLinesCount
