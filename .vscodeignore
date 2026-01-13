@@ -1,0 +1,24 @@
+# Build files
+.vscode/**
+.vscode-test/**
+src/**
+out/**
+node_modules/**
+webpack.config.js
+
+# Development files
+.gitignore
+.git/**
+tsconfig.json
+tmp_rovodev_*
+**/*.map
+
+# Lean files (not needed in extension)
+*.lean
+flake.nix
+flake.lock
+acli
+
+# Documentation and misc
+package-lock.json
+*.vsix

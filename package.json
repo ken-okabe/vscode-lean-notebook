@@ -9,11 +9,16 @@
     "categories": [
         "Other"
     ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ken-okabe/vscode-lean-notebook"
+    },
+    "publisher": "ken-okabe",
     "activationEvents": [
         "onCommand:leannotebook.openPreview",
         "onLanguage:lean4"
     ],
-    "main": "./out/extension.js",
+    "main": "./dist/extension.js",
     "contributes": {
         "commands": [
             {
@@ -38,26 +43,34 @@
         }
     },
     "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "pretest": "npm run compile && npm run lint",
+        "vscode:prepublish": "npm run package",
+        "compile": "webpack",
+        "watch": "webpack --watch",
+        "package": "webpack --mode production --devtool hidden-source-map",
+        "compile-tests": "tsc -p . --outDir out",
+        "watch-tests": "tsc -p . -w --outDir out",
+        "pretest": "npm run compile-tests && npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js"
     },
     "devDependencies": {
-        "@types/vscode": "^1.80.0",
         "@types/glob": "^8.1.0",
         "@types/node": "20.2.5",
+        "@types/vscode": "^1.80.0",
         "@typescript-eslint/eslint-plugin": "^5.59.8",
         "@typescript-eslint/parser": "^5.59.8",
         "eslint": "^8.41.0",
         "glob": "^8.1.0",
-        "typescript": "^5.1.3"
+        "ts-loader": "^9.5.4",
+        "typescript": "^5.1.3",
+        "webpack": "^5.104.1",
+        "webpack-cli": "^6.0.1"
     },
     "dependencies": {
         "katex": "^0.16.8",
         "marked": "^9.0.0",
+        "mermaid": "^11.12.2",
+        "prismjs": "^1.30.0",
         "vanjs-core": "^1.2.3"
     }
 }

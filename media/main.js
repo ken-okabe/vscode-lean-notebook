@@ -6,6 +6,32 @@ import van from './van.min.js';
 
 const { div, pre, span, code } = van.tags;
 
+// Register Lean language definition for Prism.js
+if (window.Prism && !Prism.languages.lean) {
+    Prism.languages.lean = {
+        'comment': [
+            {
+                pattern: /--.*$/m,
+                greedy: true
+            },
+            {
+                pattern: /\/-[\s\S]*?-\//,
+                greedy: true
+            }
+        ],
+        'string': {
+            pattern: /"(?:[^"\\]|\\.)*"/,
+            greedy: true
+        },
+        'keyword': /\b(?:def|theorem|lemma|example|axiom|inductive|structure|class|instance|section|namespace|variable|universe|import|export|open|private|protected|where|let|have|show|by|from|fun|match|with|if|then|else|do|return|for|in|mut|partial|unsafe|deriving|extends|abbrev|opaque|noncomputable)\b/,
+        'builtin': /\b(?:Type|Prop|Sort|Nat|Int|String|Bool|List|Array|Option|true|false)\b/,
+        'number': /\b\d+\b/,
+        'operator': /[:=]|[+\-*/<>]=?|[∀∃∧∨¬≠≤≥→←↔|⟨⟩]/,
+        'punctuation': /[{}[\]();,.:]/
+    };
+    console.log('[Prism] Lean language registered');
+}
+
 // --- Components ---
 
 const MarkdownComponent = (content) => {
@@ -36,16 +62,85 @@ const MarkdownComponent = (content) => {
     return dom;
 };
 
-const CodeComponent = (source, output) => {
+const CodeComponent = (source, output, language = 'lean') => {
+    // Create code element with Prism highlighting
+    const langClass = language ? `language-${language}` : 'language-lean';
+    const codeElement = code({ class: langClass }, source);
+    const preElement = pre({ class: "lean-source" }, codeElement);
+    
+    // Apply Prism highlighting after DOM insertion
+    setTimeout(() => {
+        if (window.Prism) {
+            Prism.highlightElement(codeElement);
+        }
+    }, 0);
+    
     return div({ class: "code-cell" },
-        // Source
-        pre({ class: "lean-source" }, source),
+        // Source with Prism highlighting
+        preElement,
         // Output (only if present)
         output ? div({ class: "lean-output" },
             span({ class: "output-label" }, "Result:"),
             pre(output)
         ) : null
     );
+};
+
+const TextComponent = (content) => {
+    const container = div({ class: "text-cell" });
+    
+    // Render Markdown with KaTeX support
+    setTimeout(() => {
+        if (window.marked) {
+            const html = marked.parse(content);
+            container.innerHTML = html;
+            
+            // Render math equations
+            if (window.renderMathInElement) {
+                renderMathInElement(container, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false},
+                        {left: "\\[", right: "\\]", display: true},
+                        {left: "\\(", right: "\\)", display: false}
+                    ],
+                    throwOnError: false
+                });
+            }
+        }
+    }, 0);
+    
+    return container;
+};
+
+const MermaidComponent = (source) => {
+    const container = div({ class: "mermaid-cell" });
+    const uniqueId = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+    container.id = uniqueId;
+    
+    // Render Mermaid diagram
+    setTimeout(() => {
+        if (window.mermaid) {
+            mermaid.initialize({ 
+                startOnLoad: false,
+                theme: 'default'
+            });
+            
+            try {
+                mermaid.render(`mermaid-svg-${uniqueId}`, source).then(result => {
+                    container.innerHTML = result.svg;
+                }).catch(err => {
+                    console.error('Mermaid rendering error:', err);
+                    container.innerHTML = `<pre class="error">Mermaid Error: ${err.message}</pre>`;
+                });
+            } catch (err) {
+                console.error('Mermaid rendering error:', err);
+                container.innerHTML = `<pre class="error">Mermaid Error: ${err.message}</pre>`;
+            }
+        }
+    }, 0);
+    
+    return container;
 };
 
 // --- App State ---
@@ -61,10 +156,20 @@ const App = () => {
             blocksState.val.map((block, index) => {
                 // Keying could be improved for perf, but map is fine for now
                 if (block.type === 'markdown') {
+                    // Lean file markdown block
                     return MarkdownComponent(block.content);
-                } else {
-                    return CodeComponent(block.source, block.output);
+                } else if (block.type === 'text') {
+                    // Markdown file text block
+                    return TextComponent(block.content);
+                } else if (block.type === 'code') {
+                    // Code block (Lean or Markdown)
+                    const language = block.language || 'lean';
+                    return CodeComponent(block.source, block.output, language);
+                } else if (block.type === 'mermaid') {
+                    // Mermaid diagram block
+                    return MermaidComponent(block.source);
                 }
+                return null;
             })
         )
     );
@@ -76,11 +181,222 @@ van.add(document.getElementById("app"), App());
 
 // --- Messaging ---
 
+let pendingScrollLine = null;
+let scrollAttempts = 0;
+const MAX_SCROLL_ATTEMPTS = 10;
+
+function attemptScroll(line, attempt = 0) {
+    const blocks = blocksState.val;
+    
+    // Check if blocks are loaded
+    if (!blocks || blocks.length === 0) {
+        if (attempt < MAX_SCROLL_ATTEMPTS) {
+            console.log(`[Scroll] Blocks not ready yet, attempt ${attempt + 1}/${MAX_SCROLL_ATTEMPTS}`);
+            setTimeout(() => attemptScroll(line, attempt + 1), 200);
+        } else {
+            console.log(`[Scroll] Failed to scroll after ${MAX_SCROLL_ATTEMPTS} attempts`);
+        }
+        return;
+    }
+    
+    // Check if DOM elements are rendered
+    const app = document.getElementById('app');
+    const allCells = app.querySelectorAll('.code-cell, .markdown-cell, .text-cell, .mermaid-cell');
+    
+    if (allCells.length === 0) {
+        if (attempt < MAX_SCROLL_ATTEMPTS) {
+            console.log(`[Scroll] DOM not ready yet, attempt ${attempt + 1}/${MAX_SCROLL_ATTEMPTS}`);
+            setTimeout(() => attemptScroll(line, attempt + 1), 200);
+        } else {
+            console.log(`[Scroll] Failed to scroll: DOM not rendered after ${MAX_SCROLL_ATTEMPTS} attempts`);
+        }
+        return;
+    }
+    
+    console.log(`[Scroll] Executing scroll to line ${line}, blocks=${blocks.length}, cells=${allCells.length}`);
+    scrollToLine(line);
+}
+
 window.addEventListener('message', event => {
     const message = event.data; // The json data that the extension sent
     console.log("[main.js] Message received:", message.command);
     if (message.command === 'update') {
-        // console.log("Received blocks:", message.blocks);
         blocksState.val = message.blocks;
+        console.log(`[Update] Received ${message.blocks.length} blocks`);
+        
+        // If there's a pending scroll, execute it after DOM is fully rendered
+        if (pendingScrollLine !== null) {
+            const lineToScroll = pendingScrollLine;
+            pendingScrollLine = null;
+            
+            // Wait for VanJS to finish rendering and all async rendering (Prism, KaTeX, etc)
+            setTimeout(() => {
+                requestAnimationFrame(() => {
+                    attemptScroll(lineToScroll, 0);
+                });
+            }, 300);
+        }
+    } else if (message.command === 'scrollToLine') {
+        console.log(`[Scroll] Received scrollToLine command: line=${message.line}`);
+        
+        // If blocks are already loaded, scroll immediately
+        if (blocksState.val && blocksState.val.length > 0) {
+            console.log(`[Scroll] Blocks already loaded, scrolling immediately`);
+            setTimeout(() => {
+                requestAnimationFrame(() => {
+                    attemptScroll(message.line, 0);
+                });
+            }, 300);
+        } else {
+            // Otherwise, store for later
+            console.log(`[Scroll] Blocks not loaded yet, storing pending scroll`);
+            pendingScrollLine = message.line;
+        }
+    }
+});
+
+// Function to scroll preview to a specific line in the source
+function scrollToLine(line) {
+    const blocks = blocksState.val;
+    let targetIndex = -1;
+    
+    console.log(`[scrollToLine DEBUG] Target line: ${line}, Total blocks: ${blocks.length}`);
+    
+    // Find the block that contains this line (line is 0-based from editor)
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        if (block.range) {
+            // range.startLine and endLine are 1-based
+            const startLine0 = block.range.startLine - 1;
+            const endLine0 = block.range.endLine - 1;
+            
+            console.log(`[scrollToLine DEBUG] Block ${i}: range [${startLine0}-${endLine0}], type: ${block.type}`);
+            
+            if (line >= startLine0 && line <= endLine0) {
+                targetIndex = i;
+                console.log(`[scrollToLine DEBUG] Found exact match at block ${i}`);
+                break;
+            }
+        } else {
+            console.log(`[scrollToLine DEBUG] Block ${i}: NO RANGE, type: ${block.type}`);
+        }
+    }
+    
+    // If no exact match, find the closest block before this line
+    if (targetIndex === -1 && blocks.length > 0) {
+        console.log(`[scrollToLine DEBUG] No exact match, searching for closest block`);
+        for (let i = blocks.length - 1; i >= 0; i--) {
+            const block = blocks[i];
+            if (block.range && line >= block.range.startLine - 1) {
+                targetIndex = i;
+                console.log(`[scrollToLine DEBUG] Found closest block ${i} at line ${block.range.startLine - 1}`);
+                break;
+            }
+        }
+        // Still no match? Use first block
+        if (targetIndex === -1) {
+            targetIndex = 0;
+            console.log(`[scrollToLine DEBUG] No match found, using first block`);
+        }
+    }
+    
+    // Scroll to the target block
+    if (targetIndex >= 0) {
+        const app = document.getElementById('app');
+        const allCells = app.querySelectorAll('.code-cell, .markdown-cell, .text-cell, .mermaid-cell');
+        console.log(`[scrollToLine DEBUG] Total cells in DOM: ${allCells.length}`);
+        
+        if (allCells[targetIndex]) {
+            const targetBlock = blocks[targetIndex];
+            const cell = allCells[targetIndex];
+            
+            // Calculate relative position within the block
+            if (targetBlock.range) {
+                const blockStartLine = targetBlock.range.startLine - 1;
+                const blockEndLine = targetBlock.range.endLine - 1;
+                const blockLineCount = blockEndLine - blockStartLine;
+                const relativePosition = (line - blockStartLine) / blockLineCount;
+                
+                console.log(`[scrollToLine DEBUG] Block ${targetIndex}: start=${blockStartLine}, end=${blockEndLine}, count=${blockLineCount}`);
+                console.log(`[scrollToLine DEBUG] Target line ${line} is ${((relativePosition * 100).toFixed(1))}% into the block`);
+                
+                // Scroll to the cell first
+                cell.scrollIntoView({ behavior: 'instant', block: 'start' });
+                
+                // Then add offset based on relative position within the block
+                const cellRect = cell.getBoundingClientRect();
+                const cellHeight = cellRect.height;
+                const additionalScroll = cellHeight * relativePosition;
+                
+                console.log(`[scrollToLine DEBUG] Cell height: ${cellHeight}px, additional scroll: ${additionalScroll}px`);
+                
+                window.scrollBy({
+                    top: additionalScroll,
+                    behavior: 'instant'
+                });
+                
+                console.log(`[Scroll] Scrolled to block ${targetIndex}, offset ${(relativePosition * 100).toFixed(1)}% for line ${line}`);
+            } else {
+                // No range info, just scroll to block start
+                cell.scrollIntoView({ behavior: 'instant', block: 'start' });
+                console.log(`[Scroll] Scrolled to block ${targetIndex} for line ${line} (no range info)`);
+            }
+        } else {
+            console.log(`[scrollToLine ERROR] Cell ${targetIndex} not found in DOM!`);
+        }
+    } else {
+        console.log(`[scrollToLine ERROR] No target index found!`);
+    }
+}
+
+// Setup vscode API
+const vscode = acquireVsCodeApi();
+window.vscode = vscode;
+
+// Function to get current scroll position
+function getCurrentScrollPercentage() {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+    return scrollHeight > 0 ? scrollTop / scrollHeight : 0;
+}
+
+// Send scroll position periodically (every second)
+let scrollReportInterval = null;
+
+function startScrollReporting() {
+    if (scrollReportInterval) {
+        return; // Already running
+    }
+    
+    console.log('[Scroll] Starting periodic scroll reporting');
+    scrollReportInterval = setInterval(() => {
+        const percentage = getCurrentScrollPercentage();
+        vscode.postMessage({
+            command: 'scrollPosition',
+            percentage: percentage
+        });
+    }, 1000); // Every 1 second
+}
+
+function stopScrollReporting() {
+    if (scrollReportInterval) {
+        console.log('[Scroll] Stopping periodic scroll reporting');
+        clearInterval(scrollReportInterval);
+        scrollReportInterval = null;
+    }
+}
+
+// Start reporting when page loads
+startScrollReporting();
+
+// Send scroll position when requested
+window.addEventListener('message', event => {
+    const message = event.data;
+    if (message.command === 'getScrollPosition') {
+        const percentage = getCurrentScrollPercentage();
+        vscode.postMessage({
+            command: 'scrollPosition',
+            percentage: percentage
+        });
     }
 });

@@ -3,6 +3,10 @@ export type NotebookBlock = MarkdownBlock | CodeBlock;
 export interface MarkdownBlock {
     type: 'markdown';
     content: string;
+    range: {
+        startLine: number;
+        endLine: number;
+    };
 }
 
 export interface CodeBlock {
@@ -88,9 +92,18 @@ export function parseLeanFile(content: string): NotebookBlock[] {
 
         // 2. The match itself is MARKDOWN
         // match[2] is the content inside the comment
+        const preLines = content.substring(0, match.index).split('\n');
+        const markdownStartLine = preLines.length;
+        const markdownContent = match[0]; // Full match including delimiters
+        const markdownLinesCount = markdownContent.split('\n').length - 1;
+        
         blocks.push({
             type: 'markdown',
-            content: match[2] // raw markdown content
+            content: match[2], // raw markdown content
+            range: {
+                startLine: markdownStartLine,
+                endLine: markdownStartLine + markdownLinesCount
+            }
         });
 
         lastIndex = regex.lastIndex;
