@@ -34,7 +34,7 @@ if (window.Prism && !Prism.languages.lean) {
 
 // --- Components ---
 
-const MarkdownComponent = (content) => {
+const MarkdownComponent = (content, onRenderComplete) => {
     // 1. Convert Markdown to HTML
     const rawHtml = marked.parse(content);
 
@@ -57,12 +57,13 @@ const MarkdownComponent = (content) => {
                 throwOnError: false
             });
         }
+        if (onRenderComplete) onRenderComplete();
     }, 0);
 
     return dom;
 };
 
-const CodeComponent = (source, output, language = 'lean') => {
+const CodeComponent = (source, output, language = 'lean', onRenderComplete) => {
     // Create code element with Prism highlighting
     const langClass = language ? `language-${language}` : 'language-lean';
     const codeElement = code({ class: langClass }, source);
@@ -73,6 +74,7 @@ const CodeComponent = (source, output, language = 'lean') => {
         if (window.Prism) {
             Prism.highlightElement(codeElement);
         }
+        if (onRenderComplete) onRenderComplete();
     }, 0);
     
     return div({ class: "code-cell" },
@@ -86,7 +88,7 @@ const CodeComponent = (source, output, language = 'lean') => {
     );
 };
 
-const TextComponent = (content) => {
+const TextComponent = (content, onRenderComplete) => {
     const container = div({ class: "text-cell" });
     
     // Render Markdown with KaTeX support
@@ -108,12 +110,13 @@ const TextComponent = (content) => {
                 });
             }
         }
+        if (onRenderComplete) onRenderComplete();
     }, 0);
     
     return container;
 };
 
-const MermaidComponent = (source) => {
+const MermaidComponent = (source, onRenderComplete) => {
     const container = div({ class: "mermaid-cell" });
     const uniqueId = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
     container.id = uniqueId;
@@ -129,14 +132,19 @@ const MermaidComponent = (source) => {
             try {
                 mermaid.render(`mermaid-svg-${uniqueId}`, source).then(result => {
                     container.innerHTML = result.svg;
+                    if (onRenderComplete) onRenderComplete();
                 }).catch(err => {
                     console.error('Mermaid rendering error:', err);
                     container.innerHTML = `<pre class="error">Mermaid Error: ${err.message}</pre>`;
+                    if (onRenderComplete) onRenderComplete();
                 });
             } catch (err) {
                 console.error('Mermaid rendering error:', err);
                 container.innerHTML = `<pre class="error">Mermaid Error: ${err.message}</pre>`;
+                if (onRenderComplete) onRenderComplete();
             }
+        } else {
+            if (onRenderComplete) onRenderComplete();
         }
     }, 0);
     
@@ -146,6 +154,44 @@ const MermaidComponent = (source) => {
 // --- App State ---
 
 const blocksState = van.state([]);
+let renderingComplete = false;
+let pendingRenders = 0;
+
+function onBlockRenderComplete() {
+    pendingRenders--;
+    console.log(`[Render] Block complete. Pending: ${pendingRenders}`);
+    
+    if (pendingRenders === 0 && !renderingComplete) {
+        renderingComplete = true;
+        const totalBlocks = blocksState.val.length;
+        
+        // For large documents (>100 blocks), add extra safety margin
+        const isLargeDocument = totalBlocks > 100;
+        const extraDelay = isLargeDocument ? 500 : 0;
+        
+        console.log(`[Render] All blocks rendered (${totalBlocks} blocks). Extra delay: ${extraDelay}ms`);
+        
+        setTimeout(() => {
+            // Notify extension that rendering is complete
+            if (window.vscode) {
+                vscode.postMessage({
+                    command: 'renderingComplete'
+                });
+            }
+            
+            // If there's a pending scroll, execute it now
+            if (pendingScrollLine !== null) {
+                const lineToScroll = pendingScrollLine;
+                pendingScrollLine = null;
+                console.log(`[Render] Executing pending scroll to line ${lineToScroll}`);
+                
+                requestAnimationFrame(() => {
+                    scrollToLine(lineToScroll);
+                });
+            }
+        }, extraDelay);
+    }
+}
 
 // --- Main App ---
 
@@ -157,17 +203,17 @@ const App = () => {
                 // Keying could be improved for perf, but map is fine for now
                 if (block.type === 'markdown') {
                     // Lean file markdown block
-                    return MarkdownComponent(block.content);
+                    return MarkdownComponent(block.content, onBlockRenderComplete);
                 } else if (block.type === 'text') {
                     // Markdown file text block
-                    return TextComponent(block.content);
+                    return TextComponent(block.content, onBlockRenderComplete);
                 } else if (block.type === 'code') {
                     // Code block (Lean or Markdown)
                     const language = block.language || 'lean';
-                    return CodeComponent(block.source, block.output, language);
+                    return CodeComponent(block.source, block.output, language, onBlockRenderComplete);
                 } else if (block.type === 'mermaid') {
                     // Mermaid diagram block
-                    return MermaidComponent(block.source);
+                    return MermaidComponent(block.source, onBlockRenderComplete);
                 }
                 return null;
             })
@@ -221,35 +267,36 @@ window.addEventListener('message', event => {
     const message = event.data; // The json data that the extension sent
     console.log("[main.js] Message received:", message.command);
     if (message.command === 'update') {
-        blocksState.val = message.blocks;
-        console.log(`[Update] Received ${message.blocks.length} blocks`);
+        // Reset rendering tracking
+        renderingComplete = false;
+        pendingRenders = message.blocks.length;
+        console.log(`[Update] Received ${message.blocks.length} blocks, starting render tracking`);
         
-        // If there's a pending scroll, execute it after DOM is fully rendered
-        if (pendingScrollLine !== null) {
-            const lineToScroll = pendingScrollLine;
-            pendingScrollLine = null;
-            
-            // Wait for VanJS to finish rendering and all async rendering (Prism, KaTeX, etc)
-            setTimeout(() => {
-                requestAnimationFrame(() => {
-                    attemptScroll(lineToScroll, 0);
+        blocksState.val = message.blocks;
+        
+        // If no blocks, mark as complete immediately
+        if (message.blocks.length === 0) {
+            renderingComplete = true;
+            if (window.vscode) {
+                vscode.postMessage({
+                    command: 'renderingComplete'
                 });
-            }, 300);
+            }
         }
+        
+        // Note: pendingScrollLine will be handled by onBlockRenderComplete() when rendering is done
     } else if (message.command === 'scrollToLine') {
         console.log(`[Scroll] Received scrollToLine command: line=${message.line}`);
         
-        // If blocks are already loaded, scroll immediately
-        if (blocksState.val && blocksState.val.length > 0) {
-            console.log(`[Scroll] Blocks already loaded, scrolling immediately`);
-            setTimeout(() => {
-                requestAnimationFrame(() => {
-                    attemptScroll(message.line, 0);
-                });
-            }, 300);
+        // If rendering is already complete, scroll immediately
+        if (renderingComplete) {
+            console.log(`[Scroll] Rendering already complete, scrolling immediately`);
+            requestAnimationFrame(() => {
+                scrollToLine(message.line);
+            });
         } else {
-            // Otherwise, store for later
-            console.log(`[Scroll] Blocks not loaded yet, storing pending scroll`);
+            // Otherwise, store for later (will be executed when rendering completes)
+            console.log(`[Scroll] Rendering not complete yet, storing pending scroll`);
             pendingScrollLine = message.line;
         }
     }

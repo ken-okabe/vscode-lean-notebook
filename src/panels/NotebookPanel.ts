@@ -12,6 +12,8 @@ export class NotebookPanel {
 
     private _lastScrollPosition: number = 0;
     private _scrollPositionPromise: ((value: number) => void) | null = null;
+    private _renderingCompletePromise: ((value: void) => void) | null = null;
+    private _pendingScrollLine: number | null = null;
 
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, document: vscode.TextDocument) {
         this._panel = panel;
@@ -32,6 +34,22 @@ export class NotebookPanel {
                     }
                     // Don't log every second to avoid spam
                     // console.log(`[NotebookPanel] Received scroll position: ${message.percentage}`);
+                } else if (message.command === 'renderingComplete') {
+                    console.log('[NotebookPanel] Rendering complete notification received');
+                    if (this._renderingCompletePromise) {
+                        this._renderingCompletePromise();
+                        this._renderingCompletePromise = null;
+                    }
+                    // If there's a pending scroll, execute it now
+                    if (this._pendingScrollLine !== null) {
+                        const lineToScroll = this._pendingScrollLine;
+                        this._pendingScrollLine = null;
+                        console.log(`[NotebookPanel] Executing pending scroll to line ${lineToScroll}`);
+                        this._panel.webview.postMessage({
+                            command: 'scrollToLine',
+                            line: lineToScroll
+                        });
+                    }
                 }
             },
             null,
@@ -80,19 +98,13 @@ export class NotebookPanel {
             NotebookPanel.currentPanel._panel.reveal(column);
             NotebookPanel.currentPanel._document = document;
             
-            // Update first, THEN scroll (so blocks are loaded)
+            // Store the pending scroll line
+            NotebookPanel.currentPanel._pendingScrollLine = scrollLine;
+            console.log(`[createOrShow] Stored pending scroll to line ${scrollLine}`);
+            
+            // Update - rendering complete handler will execute the scroll
             NotebookPanel.currentPanel._update();
             
-            // Send scroll command after update
-            setTimeout(() => {
-                if (NotebookPanel.currentPanel) {
-                    NotebookPanel.currentPanel._panel.webview.postMessage({
-                        command: 'scrollToLine',
-                        line: scrollLine
-                    });
-                    console.log(`[createOrShow] Sent scroll command to existing panel: line ${scrollLine}`);
-                }
-            }, 100);
             return;
         }
 
@@ -109,17 +121,9 @@ export class NotebookPanel {
 
         NotebookPanel.currentPanel = new NotebookPanel(panel, extensionUri, document);
         
-        // Send initial scroll position after panel is fully initialized and rendered
-        // The constructor calls _update() which sends blocks, so wait for that to complete
-        setTimeout(() => {
-            if (NotebookPanel.currentPanel) {
-                NotebookPanel.currentPanel._panel.webview.postMessage({
-                    command: 'scrollToLine',
-                    line: scrollLine
-                });
-                console.log(`[createOrShow] Sent scroll command to new panel: line ${scrollLine}`);
-            }
-        }, 500);
+        // Store the pending scroll line - rendering complete handler will execute it
+        NotebookPanel.currentPanel._pendingScrollLine = scrollLine;
+        console.log(`[createOrShow] Stored initial scroll to line ${scrollLine} for new panel`);
     }
 
     public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, document: vscode.TextDocument) {
