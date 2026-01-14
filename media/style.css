@@ -22,7 +22,7 @@ body {
     padding-bottom: 50px;
 }
 
-/* Markdown Cell */
+/* Markdown Cell (legacy) */
 .markdown-cell {
     padding: var(--cell-padding);
     margin-bottom: 4px;
@@ -38,6 +38,85 @@ body {
 .markdown-cell p {
     margin-bottom: 0.8em;
     line-height: 1.6;
+}
+
+/* Module Documentation Cell (/-! comments) - Structural comments with headings */
+.module-doc-cell {
+    padding: var(--cell-padding);
+    margin-bottom: 4px;
+    background-color: transparent; /* No special background */
+    /* No border or box styling */
+}
+
+.module-doc-cell h1,
+.module-doc-cell h2,
+.module-doc-cell h3,
+.module-doc-cell h4 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    border-bottom: none;
+    font-weight: 600;
+}
+
+.module-doc-cell h1:first-child,
+.module-doc-cell h2:first-child,
+.module-doc-cell h3:first-child {
+    margin-top: 0;
+}
+
+.module-doc-cell p {
+    margin-bottom: 0.8em;
+    line-height: 1.6;
+}
+
+.module-doc-cell ul,
+.module-doc-cell ol {
+    margin: 0.5em 0;
+    padding-left: 2em;
+}
+
+/* Doc Comment Cell (/-- comments) - Definition/theorem explanations */
+.doc-comment-cell {
+    padding: 12px 16px;
+    margin: 8px 16px;
+    margin-bottom: 4px;
+    background-color: rgba(40, 167, 69, 0.06); /* Light green tint */
+    border-left: 4px solid rgba(40, 167, 69, 0.5); /* Green left border */
+    border-radius: 4px;
+}
+
+.doc-comment-cell h1,
+.doc-comment-cell h2,
+.doc-comment-cell h3,
+.doc-comment-cell h4 {
+    margin-top: 0.8em;
+    margin-bottom: 0.4em;
+    font-weight: 600;
+}
+
+.doc-comment-cell h1:first-child,
+.doc-comment-cell h2:first-child,
+.doc-comment-cell h3:first-child {
+    margin-top: 0;
+}
+
+.doc-comment-cell p {
+    margin-bottom: 0.8em;
+    line-height: 1.6;
+}
+
+.doc-comment-cell ul,
+.doc-comment-cell ol {
+    margin: 0.5em 0;
+    padding-left: 2em;
+}
+
+.doc-comment-cell code {
+    background-color: var(--vscode-textCodeBlock-background);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: var(--code-font);
+    font-size: 0.9em;
 }
 
 /* Code Cell */

@@ -63,6 +63,54 @@ const MarkdownComponent = (content, onRenderComplete) => {
     return dom;
 };
 
+const ModuleDocComponent = (content, onRenderComplete) => {
+    // Module documentation (/-! comments) - structural comments with headings
+    const rawHtml = marked.parse(content);
+    const dom = div({ class: "module-doc-cell" });
+    dom.innerHTML = rawHtml;
+
+    setTimeout(() => {
+        if (window.renderMathInElement) {
+            renderMathInElement(dom, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false
+            });
+        }
+        if (onRenderComplete) onRenderComplete();
+    }, 0);
+
+    return dom;
+};
+
+const DocCommentComponent = (content, onRenderComplete) => {
+    // Doc comment (/-- comments) - definition/theorem explanations
+    const rawHtml = marked.parse(content);
+    const dom = div({ class: "doc-comment-cell" });
+    dom.innerHTML = rawHtml;
+
+    setTimeout(() => {
+        if (window.renderMathInElement) {
+            renderMathInElement(dom, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false
+            });
+        }
+        if (onRenderComplete) onRenderComplete();
+    }, 0);
+
+    return dom;
+};
+
 const CodeComponent = (source, output, language = 'lean', onRenderComplete) => {
     // Create code element with Prism highlighting
     const langClass = language ? `language-${language}` : 'language-lean';
@@ -201,8 +249,14 @@ const App = () => {
         () => div(
             blocksState.val.map((block, index) => {
                 // Keying could be improved for perf, but map is fine for now
-                if (block.type === 'markdown') {
-                    // Lean file markdown block
+                if (block.type === 'module-doc') {
+                    // Module documentation (/-! comments) - structural comments with headings
+                    return ModuleDocComponent(block.content, onBlockRenderComplete);
+                } else if (block.type === 'doc-comment') {
+                    // Doc comment (/-- comments) - definition/theorem explanations
+                    return DocCommentComponent(block.content, onBlockRenderComplete);
+                } else if (block.type === 'markdown') {
+                    // Lean file markdown block (legacy support)
                     return MarkdownComponent(block.content, onBlockRenderComplete);
                 } else if (block.type === 'text') {
                     // Markdown file text block

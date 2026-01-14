@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-import { parseLeanFile } from '../parser';
+import { parseLeanFileWithLSP } from '../lspParser';
 import { parseMarkdownFile } from '../markdownParser';
 
 export class NotebookPanel {
@@ -165,60 +165,38 @@ export class NotebookPanel {
         this._update();
     }
 
-    private _update() {
+    private async _update() {
         if (!this._document) { return; }
         const webview = this._panel.webview;
 
         try {
             // Parse the document based on file type
-            const text = this._document.getText();
             const isMarkdown = this._document.languageId === 'markdown' || this._document.fileName.endsWith('.md');
             
             let blocks: any[];
             
             if (isMarkdown) {
                 // Parse as Markdown
+                const text = this._document.getText();
                 blocks = parseMarkdownFile(text);
                 console.log("NotebookPanel: Parsed Markdown with " + blocks.length + " blocks.");
             } else {
-                // Parse as Lean
-                blocks = parseLeanFile(text);
+                // Parse as Lean:
+                // - structural split is a textual scan (see `splitLeanDocComments`)
+                // - #eval results are attached via Lean server diagnostics
+                console.log("NotebookPanel: Parsing Lean file (lexical split + diagnostics)...");
+                blocks = await parseLeanFileWithLSP(this._document);
+                console.log("NotebookPanel: Parsed " + blocks.length + " blocks.");
                 
-                // Fetch diagnostics (e.g. #eval results) for Lean files
-                const diagnostics = vscode.languages.getDiagnostics(this._document.uri);
-
-                // Log diagnostics count for debugging
-                if (diagnostics.length > 0) {
-                    console.log("NotebookPanel: Found " + diagnostics.length + " diagnostics.");
-                }
-
-                // Attach output to code blocks
-                blocks.forEach(block => {
-                    if (block.type === 'code' && block.range) {
-                        const startLine0 = block.range.startLine - 1;
-                        const endLine0 = block.range.endLine - 1;
-
-                        const blockDiags = diagnostics.filter(d => {
-                            const l = d.range.start.line;
-                            return l >= startLine0 && l <= endLine0;
-                        });
-
-                        if (blockDiags.length > 0) {
-                            // Sort by line
-                            blockDiags.sort((a, b) => a.range.start.line - b.range.start.line);
-                            // Format
-                            block.output = blockDiags.map(d => d.message).join('\n');
-                        }
-                    }
-                });
-                
-                console.log("NotebookPanel: Sending " + blocks.length + " Lean blocks to webview.");
+                // Note: Diagnostics are already attached by the notebook parser
             }
 
             // Send to webview
             webview.postMessage({ command: 'update', blocks: blocks });
         } catch (e) {
             console.error("Error in _update:", e);
+            // No fallback: if LSP parsing fails, send an empty update.
+            webview.postMessage({ command: 'update', blocks: [] });
         }
     }
 

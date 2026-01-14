@@ -13,6 +13,10 @@ tsconfig.json
 tmp_rovodev_*
 **/*.map
 
+# Exclude large upstream repos (used only for investigation)
+lean4-master/**
+vscode-lean4-master/**
+
 # Lean files (not needed in extension)
 *.lean
 flake.nix

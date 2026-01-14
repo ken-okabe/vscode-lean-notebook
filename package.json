@@ -2,7 +2,7 @@
     "name": "leannotebook",
     "displayName": "LeanNotebook",
     "description": "Rich notebook interface for Lean 4 based on VanJS",
-    "version": "0.0.1",
+    "version": "0.5.4",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -16,7 +16,8 @@
     "publisher": "ken-okabe",
     "activationEvents": [
         "onCommand:leannotebook.openPreview",
-        "onLanguage:lean4"
+        "onLanguage:lean4",
+        "onLanguage:markdown"
     ],
     "main": "./dist/extension.js",
     "contributes": {
@@ -51,7 +52,8 @@
         "watch-tests": "tsc -p . -w --outDir out",
         "pretest": "npm run compile-tests && npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
-        "test": "node ./out/test/runTest.js"
+        "test": "node ./out/test/runTest.js",
+    "test:parser": "npm run compile-tests --silent && node scripts/test-lean-comment-parser.js"
     },
     "devDependencies": {
         "@types/glob": "^8.1.0",
@@ -71,6 +73,7 @@
         "marked": "^9.0.0",
         "mermaid": "^11.12.2",
         "prismjs": "^1.30.0",
-        "vanjs-core": "^1.2.3"
+        "vanjs-core": "^1.2.3",
+        "vscode-languageclient": "^9.0.1"
     }
 }

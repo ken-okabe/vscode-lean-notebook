@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { NotebookPanel } from './panels/NotebookPanel';
+import { leanLspManager } from './leanLspClient';
 
 export function activate(context: vscode.ExtensionContext) {
     // Track the last active document URI to handle navigation correctly
@@ -185,4 +186,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(changeDisposable);
 }
 
-export function deactivate() { }
+export function deactivate() {
+    leanLspManager.disposeAll();
+}
