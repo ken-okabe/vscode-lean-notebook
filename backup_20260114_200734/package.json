@@ -1,0 +1,80 @@
+{
+    "name": "leannotebook",
+    "displayName": "LeanNotebook",
+    "description": "Rich notebook interface for Lean 4 based on VanJS",
+    "version": "0.5.6",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ken-okabe/vscode-lean-notebook"
+    },
+    "publisher": "ken-okabe",
+    "activationEvents": [
+        "onCommand:leannotebook.openPreview",
+        "onLanguage:lean4",
+        "onLanguage:markdown"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "leannotebook.openPreview",
+                "title": "LeanNotebook: Open Preview",
+                "icon": "$(preview)"
+            },
+            {
+                "command": "leannotebook.showSource",
+                "title": "LeanNotebook: Show Source",
+                "icon": "$(code)"
+            }
+        ],
+        "menus": {
+            "editor/title": [
+                {
+                    "command": "leannotebook.openPreview",
+                    "group": "navigation",
+                    "when": "resourceLangId == lean4"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run package",
+        "compile": "webpack",
+        "watch": "webpack --watch",
+        "package": "webpack --mode production --devtool hidden-source-map",
+        "compile-tests": "tsc -p . --outDir out",
+        "watch-tests": "tsc -p . -w --outDir out",
+        "pretest": "npm run compile-tests && npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "node ./out/test/runTest.js",
+        "test:parser": "npm run compile-tests --silent && node scripts/test-lean-comment-parser.js"
+    },
+    "devDependencies": {
+        "@types/glob": "^8.1.0",
+        "@types/node": "20.2.5",
+        "@types/vscode": "^1.80.0",
+        "@typescript-eslint/eslint-plugin": "^5.59.8",
+        "@typescript-eslint/parser": "^5.59.8",
+        "@vscode/vsce": "^3.7.1",
+        "eslint": "^8.41.0",
+        "glob": "^8.1.0",
+        "ts-loader": "^9.5.4",
+        "typescript": "^5.1.3",
+        "webpack": "^5.104.1",
+        "webpack-cli": "^6.0.1"
+    },
+    "dependencies": {
+        "katex": "^0.16.8",
+        "marked": "^9.0.0",
+        "mermaid": "^11.12.2",
+        "prismjs": "^1.30.0",
+        "vanjs-core": "^1.2.3",
+        "vscode-languageclient": "^9.0.1"
+    }
+}
