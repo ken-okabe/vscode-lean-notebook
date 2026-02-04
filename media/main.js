@@ -1,8 +1,8 @@
 import van from './van.min.js';
 
-// Global dependencies (marked, katex) are still loaded via global script tags for now,
+// Global dependencies (marked, MathJax) are still loaded via global script tags for now,
 // or we can treat them as globals since we aren't changing their files.
-// marked and renderMathInElement are global.
+// marked and MathJax are global.
 
 const { div, pre, span, code } = van.tags;
 
@@ -42,22 +42,20 @@ const MarkdownComponent = (content, onRenderComplete) => {
     const dom = div({ class: "markdown-cell" });
     dom.innerHTML = rawHtml;
 
-    // 3. Render Math (KaTeX)
+    // 3. Render Math (MathJax)
     // We use a small timeout to ensure DOM insertion (or use van.effect if purely functional,
     // but direct DOM mutation for libs is simpler here)
     setTimeout(() => {
-        if (window.renderMathInElement) {
-            renderMathInElement(dom, {
-                delimiters: [
-                    { left: '$$', right: '$$', display: true },
-                    { left: '$', right: '$', display: false },
-                    { left: '\\(', right: '\\)', display: false },
-                    { left: '\\[', right: '\\]', display: true }
-                ],
-                throwOnError: false
+        if (window.MathJax && MathJax.typesetPromise) {
+            MathJax.typesetPromise([dom]).then(() => {
+                if (onRenderComplete) onRenderComplete();
+            }).catch((err) => {
+                console.error('MathJax error:', err);
+                if (onRenderComplete) onRenderComplete();
             });
+        } else {
+            if (onRenderComplete) onRenderComplete();
         }
-        if (onRenderComplete) onRenderComplete();
     }, 0);
 
     return dom;
@@ -70,18 +68,16 @@ const ModuleDocComponent = (content, onRenderComplete) => {
     dom.innerHTML = rawHtml;
 
     setTimeout(() => {
-        if (window.renderMathInElement) {
-            renderMathInElement(dom, {
-                delimiters: [
-                    { left: '$$', right: '$$', display: true },
-                    { left: '$', right: '$', display: false },
-                    { left: '\\(', right: '\\)', display: false },
-                    { left: '\\[', right: '\\]', display: true }
-                ],
-                throwOnError: false
+        if (window.MathJax && MathJax.typesetPromise) {
+            MathJax.typesetPromise([dom]).then(() => {
+                if (onRenderComplete) onRenderComplete();
+            }).catch((err) => {
+                console.error('MathJax error:', err);
+                if (onRenderComplete) onRenderComplete();
             });
+        } else {
+            if (onRenderComplete) onRenderComplete();
         }
-        if (onRenderComplete) onRenderComplete();
     }, 0);
 
     return dom;
@@ -94,18 +90,16 @@ const DocCommentComponent = (content, onRenderComplete) => {
     dom.innerHTML = rawHtml;
 
     setTimeout(() => {
-        if (window.renderMathInElement) {
-            renderMathInElement(dom, {
-                delimiters: [
-                    { left: '$$', right: '$$', display: true },
-                    { left: '$', right: '$', display: false },
-                    { left: '\\(', right: '\\)', display: false },
-                    { left: '\\[', right: '\\]', display: true }
-                ],
-                throwOnError: false
+        if (window.MathJax && MathJax.typesetPromise) {
+            MathJax.typesetPromise([dom]).then(() => {
+                if (onRenderComplete) onRenderComplete();
+            }).catch((err) => {
+                console.error('MathJax error:', err);
+                if (onRenderComplete) onRenderComplete();
             });
+        } else {
+            if (onRenderComplete) onRenderComplete();
         }
-        if (onRenderComplete) onRenderComplete();
     }, 0);
 
     return dom;
@@ -139,23 +133,21 @@ const CodeComponent = (source, output, language = 'lean', onRenderComplete) => {
 const TextComponent = (content, onRenderComplete) => {
     const container = div({ class: "text-cell" });
     
-    // Render Markdown with KaTeX support
+    // Render Markdown with MathJax support
     setTimeout(() => {
         if (window.marked) {
             const html = marked.parse(content);
             container.innerHTML = html;
             
             // Render math equations
-            if (window.renderMathInElement) {
-                renderMathInElement(container, {
-                    delimiters: [
-                        {left: "$$", right: "$$", display: true},
-                        {left: "$", right: "$", display: false},
-                        {left: "\\[", right: "\\]", display: true},
-                        {left: "\\(", right: "\\)", display: false}
-                    ],
-                    throwOnError: false
+            if (window.MathJax && MathJax.typesetPromise) {
+                MathJax.typesetPromise([container]).then(() => {
+                    if (onRenderComplete) onRenderComplete();
+                }).catch((err) => {
+                    console.error('MathJax error:', err);
+                    if (onRenderComplete) onRenderComplete();
                 });
+                return; // Don't call onRenderComplete twice
             }
         }
         if (onRenderComplete) onRenderComplete();

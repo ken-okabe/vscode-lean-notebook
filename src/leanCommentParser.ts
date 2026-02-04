@@ -3,7 +3,8 @@ import * as vscode from 'vscode';
 export type LeanLexBlock =
   | { type: 'code'; source: string; range: { startLine: number; endLine: number } }
   | { type: 'module-doc'; content: string; range: { startLine: number; endLine: number } }
-  | { type: 'doc-comment'; content: string; range: { startLine: number; endLine: number } };
+  | { type: 'doc-comment'; content: string; range: { startLine: number; endLine: number } }
+  | { type: 'mermaid'; source: string; range: { startLine: number; endLine: number } };
 
 /**
  * Lexically split a Lean file into:
@@ -103,6 +104,90 @@ function trimEmptyLines(code: string): string {
   while (e >= 0 && lines[e].trim() === '') e--;
   if (s > e) return '';
   return lines.slice(s, e + 1).join('\n');
+}
+
+/**
+ * Split a markdown comment into sub-blocks, extracting mermaid code blocks.
+ * Returns an array of { type, content/source } objects.
+ */
+type SubBlock = 
+  | { type: 'text'; content: string }
+  | { type: 'mermaid'; source: string };
+
+function splitMermaidBlocks(content: string): SubBlock[] {
+  const result: SubBlock[] = [];
+  // Match fenced code blocks: ```mermaid\n...code...\n```
+  const codeBlockRegex = /^```mermaid\s*\n([\s\S]*?)^```\s*$/gm;
+  
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    // Text before this mermaid block
+    const textContent = content.substring(lastIndex, match.index);
+    if (textContent.trim().length > 0) {
+      result.push({ type: 'text', content: textContent.trim() });
+    }
+    
+    // The mermaid block itself
+    const mermaidSource = match[1];
+    if (mermaidSource.trim().length > 0) {
+      result.push({ type: 'mermaid', source: trimEmptyLines(mermaidSource) });
+    }
+    
+    lastIndex = codeBlockRegex.lastIndex;
+  }
+  
+  // Remaining text after last mermaid block
+  if (lastIndex < content.length) {
+    const remaining = content.substring(lastIndex);
+    if (remaining.trim().length > 0) {
+      result.push({ type: 'text', content: remaining.trim() });
+    }
+  }
+  
+  // If no mermaid blocks found, return original content
+  if (result.length === 0 && content.trim().length > 0) {
+    result.push({ type: 'text', content: content.trim() });
+  }
+  
+  return result;
+}
+
+/**
+ * Expand a comment block into multiple blocks if it contains mermaid diagrams.
+ */
+export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
+  if (block.type !== 'module-doc' && block.type !== 'doc-comment') {
+    return [block];
+  }
+  
+  const subBlocks = splitMermaidBlocks(block.content);
+  
+  // If only one text block, return original
+  if (subBlocks.length === 1 && subBlocks[0].type === 'text') {
+    return [block];
+  }
+  
+  // Otherwise, expand into multiple blocks
+  const result: LeanLexBlock[] = [];
+  for (const sub of subBlocks) {
+    if (sub.type === 'text') {
+      result.push({
+        type: block.type,
+        content: sub.content,
+        range: block.range // Use same range (approximate)
+      });
+    } else {
+      result.push({
+        type: 'mermaid',
+        source: sub.source,
+        range: block.range // Use same range (approximate)
+      });
+    }
+  }
+  
+  return result;
 }
 
 /**

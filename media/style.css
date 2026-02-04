@@ -171,8 +171,8 @@ body {
     white-space: pre-wrap;
 }
 
-/* KaTeX tweaks for VS Code dark mode visibility if needed */
-.katex {
+/* MathJax tweaks for VS Code dark mode visibility if needed */
+.MathJax {
     font-size: 1.1em;
 }
 

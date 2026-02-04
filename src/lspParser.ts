@@ -1,9 +1,18 @@
 import * as vscode from 'vscode';
 
-import { splitLeanDocComments } from './leanCommentParser';
+import { splitLeanDocComments, expandCommentBlock } from './leanCommentParser';
 import { leanLspManager } from './leanLspClient';
 
-export type NotebookBlock = ModuleDocBlock | DocCommentBlock | CodeBlock;
+export type NotebookBlock = ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock;
+
+export interface MermaidBlock {
+    type: 'mermaid';
+    source: string;
+    range: {
+        startLine: number;
+        endLine: number;
+    };
+}
 
 export interface ModuleDocBlock {
     type: 'module-doc';
@@ -52,12 +61,32 @@ export async function parseLeanFileWithLSP(document: vscode.TextDocument): Promi
 
     // Phase 1 (lexical): split /-! and /-- blocks from code using a textual scan.
     const lex = splitLeanDocComments(document.getText(), document);
-    const blocks: NotebookBlock[] = lex.map(b => {
+    console.log(`[Notebook Parser] Lexical split: ${lex.length} blocks`);
+    
+    // Phase 1.5: Expand comment blocks to extract mermaid diagrams
+    const expandedLex = lex.flatMap(b => expandCommentBlock(b));
+    console.log(`[Notebook Parser] After mermaid expansion: ${expandedLex.length} blocks`);
+    
+    // Debug: log mermaid blocks
+    const mermaidBlocks = expandedLex.filter(b => b.type === 'mermaid');
+    if (mermaidBlocks.length > 0) {
+        console.log(`[Notebook Parser] Found ${mermaidBlocks.length} mermaid blocks`);
+        mermaidBlocks.forEach((b, i) => {
+            if (b.type === 'mermaid') {
+                console.log(`[Notebook Parser] Mermaid ${i}: ${b.source.substring(0, 50)}...`);
+            }
+        });
+    }
+    
+    const blocks: NotebookBlock[] = expandedLex.map(b => {
         if (b.type === 'code') {
             return { type: 'code', source: b.source, output: undefined, range: b.range };
         }
         if (b.type === 'module-doc') {
             return { type: 'module-doc', content: b.content, range: b.range };
+        }
+        if (b.type === 'mermaid') {
+            return { type: 'mermaid', source: b.source, range: b.range };
         }
         return { type: 'doc-comment', content: b.content, range: b.range };
     });

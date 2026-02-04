@@ -211,9 +211,6 @@ export class NotebookPanel {
         // Vendors
         const vanUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'van.min.js'));
         const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'marked.min.js'));
-        const katexUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'katex.min.js'));
-        const katexAutoRenderUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'auto-render.min.js'));
-        const katexCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'katex.min.css'));
         
         // Prism.js for syntax highlighting
         const prismJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism.min.js'));
@@ -230,13 +227,23 @@ export class NotebookPanel {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="${styleUri}" rel="stylesheet">
-            <link href="${katexCssUri}" rel="stylesheet">
             <link id="prism-theme-light" href="${prismLightCssUri}" rel="stylesheet" disabled>
             <link id="prism-theme-dark" href="${prismDarkCssUri}" rel="stylesheet">
 
             <script src="${markedUri}"></script>
-            <script src="${katexUri}"></script>
-            <script src="${katexAutoRenderUri}"></script>
+            <script>
+                window.MathJax = {
+                    tex: {
+                        inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+                        displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+                        processEscapes: true
+                    },
+                    options: {
+                        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+                    }
+                };
+            </script>
+            <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
             <script src="${prismJsUri}"></script>
             <script src="${mermaidUri}"></script>
 

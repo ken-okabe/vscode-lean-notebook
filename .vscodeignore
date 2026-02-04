@@ -5,6 +5,7 @@ src/**
 out/**
 node_modules/**
 webpack.config.js
+esbuild.config.js
 
 # Development files
 .gitignore
@@ -23,6 +24,10 @@ flake.nix
 flake.lock
 acli
 
+# Test and scripts (not needed in runtime)
+scripts/**
+
 # Documentation and misc
 package-lock.json
 *.vsix
+README.md
