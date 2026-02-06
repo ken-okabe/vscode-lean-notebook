@@ -64,22 +64,48 @@ export function splitLeanDocComments(text: string, document?: vscode.TextDocumen
   }
 
   // drop empty blocks
-  return blocks.filter(b => (b.type === 'code' ? b.source.trim().length > 0 : b.content.trim().length > 0));
+  return blocks.filter(b => {
+    if (b.type === 'code') return b.source.trim().length > 0;
+    if (b.type === 'mermaid') return b.source.trim().length > 0;
+    return b.content.trim().length > 0;
+  });
 
   function pushCode(code: string) {
+    const lines = code.split('\n');
+    let s = 0;
+    while (s < lines.length && lines[s].trim() === '') s++;
+
     if (!document) {
       // best-effort line ranges
-      const startLine = text.slice(0, last).split('\n').length - 1;
-      const endLine = startLine + (code.split('\n').length - 1);
-      blocks.push({ type: 'code', source: trimEmptyLines(code), range: { startLine, endLine } });
+      // We start from `last`, but we trimmed `s` lines.
+      const rawStartLine = text.slice(0, last).split('\n').length - 1;
+      const startLine = rawStartLine + s;
+
+      const trimmedCode = trimEmptyLines(code); // effectively lines.slice(s, ...)
+      const trimmedLineCount = trimmedCode.split('\n').length;
+      // endLine should be inclusive of the trimmed content
+      const endLine = startLine + (trimmedLineCount > 0 ? trimmedLineCount - 1 : 0);
+
+      blocks.push({ type: 'code', source: trimmedCode, range: { startLine, endLine } });
       return;
     }
+
     const startPos = document.positionAt(last);
+    // endPos is for whole range, but we want the range of the preserved code
+    // Actually using original endPos is fine for "end boundary", but startPos MUST be correct for relative indexing.
+
+    const startLine = startPos.line + s;
     const endPos = document.positionAt(last + code.length);
+
+    // We can keep endLine as the original block end, or tighten it.
+    // Keeping endLine loose is safer for catching diagnostics that might be on trailing whitespace.
+    // But logically the "Code Block" ends where code ends.
+    // Let's use the original endPos.line for simplicity, as it's just an upper bound filter.
+
     blocks.push({
       type: 'code',
       source: trimEmptyLines(code),
-      range: { startLine: startPos.line, endLine: endPos.line },
+      range: { startLine: startLine, endLine: endPos.line },
     });
   }
 
@@ -110,7 +136,7 @@ function trimEmptyLines(code: string): string {
  * Split a markdown comment into sub-blocks, extracting mermaid code blocks.
  * Returns an array of { type, content/source } objects.
  */
-type SubBlock = 
+type SubBlock =
   | { type: 'text'; content: string }
   | { type: 'mermaid'; source: string };
 
@@ -118,26 +144,26 @@ function splitMermaidBlocks(content: string): SubBlock[] {
   const result: SubBlock[] = [];
   // Match fenced code blocks: ```mermaid\n...code...\n```
   const codeBlockRegex = /^```mermaid\s*\n([\s\S]*?)^```\s*$/gm;
-  
+
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  
+
   while ((match = codeBlockRegex.exec(content)) !== null) {
     // Text before this mermaid block
     const textContent = content.substring(lastIndex, match.index);
     if (textContent.trim().length > 0) {
       result.push({ type: 'text', content: textContent.trim() });
     }
-    
+
     // The mermaid block itself
     const mermaidSource = match[1];
     if (mermaidSource.trim().length > 0) {
       result.push({ type: 'mermaid', source: trimEmptyLines(mermaidSource) });
     }
-    
+
     lastIndex = codeBlockRegex.lastIndex;
   }
-  
+
   // Remaining text after last mermaid block
   if (lastIndex < content.length) {
     const remaining = content.substring(lastIndex);
@@ -145,12 +171,12 @@ function splitMermaidBlocks(content: string): SubBlock[] {
       result.push({ type: 'text', content: remaining.trim() });
     }
   }
-  
+
   // If no mermaid blocks found, return original content
   if (result.length === 0 && content.trim().length > 0) {
     result.push({ type: 'text', content: content.trim() });
   }
-  
+
   return result;
 }
 
@@ -161,14 +187,14 @@ export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
   if (block.type !== 'module-doc' && block.type !== 'doc-comment') {
     return [block];
   }
-  
+
   const subBlocks = splitMermaidBlocks(block.content);
-  
+
   // If only one text block, return original
   if (subBlocks.length === 1 && subBlocks[0].type === 'text') {
     return [block];
   }
-  
+
   // Otherwise, expand into multiple blocks
   const result: LeanLexBlock[] = [];
   for (const sub of subBlocks) {
@@ -186,7 +212,7 @@ export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
       });
     }
   }
-  
+
   return result;
 }
 

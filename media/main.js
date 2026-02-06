@@ -9,6 +9,10 @@ const { div, pre, span, code } = van.tags;
 // Register Lean language definition for Prism.js
 if (window.Prism && !Prism.languages.lean) {
     Prism.languages.lean = {
+        'eval-result': {
+            pattern: /--\s*Evaluated:.*$/m,
+            alias: 'comment' // Inherit comment styling as base, but allows specific override
+        },
         'comment': [
             {
                 pattern: /--.*$/m,
@@ -105,12 +109,50 @@ const DocCommentComponent = (content, onRenderComplete) => {
     return dom;
 };
 
-const CodeComponent = (source, output, language = 'lean', onRenderComplete) => {
+const CodeComponent = (source, outputs, language = 'lean', onRenderComplete) => {
+    // Strategy: Interleave outputs into the source code as comments
+    // This preserves the "Literate" style and ensures 1:1 alignment without complex DOM hacking.
+
+    let displaySource = source;
+
+    if (outputs && outputs.length > 0) {
+        // Sort outputs by line number descending so insertions don't mess up indices?
+        // Actually we need to insert based on line number.
+        // Splitting by newline is easiest.
+
+        const lines = source.split(/\r?\n/);
+        const newLines = [];
+
+        // Map outputs to lines. output.line is 0-based index relative to the block.
+        const outputsByLine = new Map();
+        outputs.forEach(o => {
+            if (!outputsByLine.has(o.line)) {
+                outputsByLine.set(o.line, []);
+            }
+            outputsByLine.get(o.line).push(o.content);
+        });
+
+        for (let i = 0; i < lines.length; i++) {
+            newLines.push(lines[i]);
+
+            // If there are outputs for this line, append them as new lines
+            if (outputsByLine.has(i)) {
+                const results = outputsByLine.get(i);
+                results.forEach(res => {
+                    // Prefix with "-- Evaluated: " to style as distinct eval result
+                    newLines.push(`-- Evaluated: ${res}`);
+                });
+            }
+        }
+
+        displaySource = newLines.join('\n');
+    }
+
     // Create code element with Prism highlighting
     const langClass = language ? `language-${language}` : 'language-lean';
-    const codeElement = code({ class: langClass }, source);
+    const codeElement = code({ class: langClass }, displaySource);
     const preElement = pre({ class: "lean-source" }, codeElement);
-    
+
     // Apply Prism highlighting after DOM insertion
     setTimeout(() => {
         if (window.Prism) {
@@ -118,27 +160,22 @@ const CodeComponent = (source, output, language = 'lean', onRenderComplete) => {
         }
         if (onRenderComplete) onRenderComplete();
     }, 0);
-    
+
     return div({ class: "code-cell" },
-        // Source with Prism highlighting
-        preElement,
-        // Output (only if present)
-        output ? div({ class: "lean-output" },
-            span({ class: "output-label" }, "Result:"),
-            pre(output)
-        ) : null
+        // Source with Prism highlighting (now contains results as comments)
+        preElement
     );
 };
 
 const TextComponent = (content, onRenderComplete) => {
     const container = div({ class: "text-cell" });
-    
+
     // Render Markdown with MathJax support
     setTimeout(() => {
         if (window.marked) {
             const html = marked.parse(content);
             container.innerHTML = html;
-            
+
             // Render math equations
             if (window.MathJax && MathJax.typesetPromise) {
                 MathJax.typesetPromise([container]).then(() => {
@@ -152,7 +189,7 @@ const TextComponent = (content, onRenderComplete) => {
         }
         if (onRenderComplete) onRenderComplete();
     }, 0);
-    
+
     return container;
 };
 
@@ -160,15 +197,15 @@ const MermaidComponent = (source, onRenderComplete) => {
     const container = div({ class: "mermaid-cell" });
     const uniqueId = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
     container.id = uniqueId;
-    
+
     // Render Mermaid diagram
     setTimeout(() => {
         if (window.mermaid) {
-            mermaid.initialize({ 
+            mermaid.initialize({
                 startOnLoad: false,
                 theme: 'default'
             });
-            
+
             try {
                 mermaid.render(`mermaid-svg-${uniqueId}`, source).then(result => {
                     container.innerHTML = result.svg;
@@ -187,7 +224,7 @@ const MermaidComponent = (source, onRenderComplete) => {
             if (onRenderComplete) onRenderComplete();
         }
     }, 0);
-    
+
     return container;
 };
 
@@ -200,17 +237,17 @@ let pendingRenders = 0;
 function onBlockRenderComplete() {
     pendingRenders--;
     console.log(`[Render] Block complete. Pending: ${pendingRenders}`);
-    
+
     if (pendingRenders === 0 && !renderingComplete) {
         renderingComplete = true;
         const totalBlocks = blocksState.val.length;
-        
+
         // For large documents (>100 blocks), add extra safety margin
         const isLargeDocument = totalBlocks > 100;
         const extraDelay = isLargeDocument ? 500 : 0;
-        
+
         console.log(`[Render] All blocks rendered (${totalBlocks} blocks). Extra delay: ${extraDelay}ms`);
-        
+
         setTimeout(() => {
             // Notify extension that rendering is complete
             if (window.vscode) {
@@ -218,13 +255,13 @@ function onBlockRenderComplete() {
                     command: 'renderingComplete'
                 });
             }
-            
+
             // If there's a pending scroll, execute it now
             if (pendingScrollLine !== null) {
                 const lineToScroll = pendingScrollLine;
                 pendingScrollLine = null;
                 console.log(`[Render] Executing pending scroll to line ${lineToScroll}`);
-                
+
                 requestAnimationFrame(() => {
                     scrollToLine(lineToScroll);
                 });
@@ -256,7 +293,7 @@ const App = () => {
                 } else if (block.type === 'code') {
                     // Code block (Lean or Markdown)
                     const language = block.language || 'lean';
-                    return CodeComponent(block.source, block.output, language, onBlockRenderComplete);
+                    return CodeComponent(block.source, block.outputs, language, onBlockRenderComplete);
                 } else if (block.type === 'mermaid') {
                     // Mermaid diagram block
                     return MermaidComponent(block.source, onBlockRenderComplete);
@@ -279,7 +316,7 @@ const MAX_SCROLL_ATTEMPTS = 10;
 
 function attemptScroll(line, attempt = 0) {
     const blocks = blocksState.val;
-    
+
     // Check if blocks are loaded
     if (!blocks || blocks.length === 0) {
         if (attempt < MAX_SCROLL_ATTEMPTS) {
@@ -290,11 +327,11 @@ function attemptScroll(line, attempt = 0) {
         }
         return;
     }
-    
+
     // Check if DOM elements are rendered
     const app = document.getElementById('app');
     const allCells = app.querySelectorAll('.code-cell, .markdown-cell, .text-cell, .mermaid-cell');
-    
+
     if (allCells.length === 0) {
         if (attempt < MAX_SCROLL_ATTEMPTS) {
             console.log(`[Scroll] DOM not ready yet, attempt ${attempt + 1}/${MAX_SCROLL_ATTEMPTS}`);
@@ -304,7 +341,7 @@ function attemptScroll(line, attempt = 0) {
         }
         return;
     }
-    
+
     console.log(`[Scroll] Executing scroll to line ${line}, blocks=${blocks.length}, cells=${allCells.length}`);
     scrollToLine(line);
 }
@@ -317,9 +354,9 @@ window.addEventListener('message', event => {
         renderingComplete = false;
         pendingRenders = message.blocks.length;
         console.log(`[Update] Received ${message.blocks.length} blocks, starting render tracking`);
-        
+
         blocksState.val = message.blocks;
-        
+
         // If no blocks, mark as complete immediately
         if (message.blocks.length === 0) {
             renderingComplete = true;
@@ -329,11 +366,11 @@ window.addEventListener('message', event => {
                 });
             }
         }
-        
+
         // Note: pendingScrollLine will be handled by onBlockRenderComplete() when rendering is done
     } else if (message.command === 'scrollToLine') {
         console.log(`[Scroll] Received scrollToLine command: line=${message.line}`);
-        
+
         // If rendering is already complete, scroll immediately
         if (renderingComplete) {
             console.log(`[Scroll] Rendering already complete, scrolling immediately`);
@@ -352,9 +389,9 @@ window.addEventListener('message', event => {
 function scrollToLine(line) {
     const blocks = blocksState.val;
     let targetIndex = -1;
-    
+
     console.log(`[scrollToLine DEBUG] Target line: ${line}, Total blocks: ${blocks.length}`);
-    
+
     // Find the block that contains this line (line is 0-based from editor)
     for (let i = 0; i < blocks.length; i++) {
         const block = blocks[i];
@@ -362,9 +399,9 @@ function scrollToLine(line) {
             // range.startLine and endLine are 1-based
             const startLine0 = block.range.startLine - 1;
             const endLine0 = block.range.endLine - 1;
-            
+
             console.log(`[scrollToLine DEBUG] Block ${i}: range [${startLine0}-${endLine0}], type: ${block.type}`);
-            
+
             if (line >= startLine0 && line <= endLine0) {
                 targetIndex = i;
                 console.log(`[scrollToLine DEBUG] Found exact match at block ${i}`);
@@ -374,7 +411,7 @@ function scrollToLine(line) {
             console.log(`[scrollToLine DEBUG] Block ${i}: NO RANGE, type: ${block.type}`);
         }
     }
-    
+
     // If no exact match, find the closest block before this line
     if (targetIndex === -1 && blocks.length > 0) {
         console.log(`[scrollToLine DEBUG] No exact match, searching for closest block`);
@@ -392,42 +429,42 @@ function scrollToLine(line) {
             console.log(`[scrollToLine DEBUG] No match found, using first block`);
         }
     }
-    
+
     // Scroll to the target block
     if (targetIndex >= 0) {
         const app = document.getElementById('app');
         const allCells = app.querySelectorAll('.code-cell, .markdown-cell, .text-cell, .mermaid-cell');
         console.log(`[scrollToLine DEBUG] Total cells in DOM: ${allCells.length}`);
-        
+
         if (allCells[targetIndex]) {
             const targetBlock = blocks[targetIndex];
             const cell = allCells[targetIndex];
-            
+
             // Calculate relative position within the block
             if (targetBlock.range) {
                 const blockStartLine = targetBlock.range.startLine - 1;
                 const blockEndLine = targetBlock.range.endLine - 1;
                 const blockLineCount = blockEndLine - blockStartLine;
                 const relativePosition = (line - blockStartLine) / blockLineCount;
-                
+
                 console.log(`[scrollToLine DEBUG] Block ${targetIndex}: start=${blockStartLine}, end=${blockEndLine}, count=${blockLineCount}`);
                 console.log(`[scrollToLine DEBUG] Target line ${line} is ${((relativePosition * 100).toFixed(1))}% into the block`);
-                
+
                 // Scroll to the cell first
                 cell.scrollIntoView({ behavior: 'instant', block: 'start' });
-                
+
                 // Then add offset based on relative position within the block
                 const cellRect = cell.getBoundingClientRect();
                 const cellHeight = cellRect.height;
                 const additionalScroll = cellHeight * relativePosition;
-                
+
                 console.log(`[scrollToLine DEBUG] Cell height: ${cellHeight}px, additional scroll: ${additionalScroll}px`);
-                
+
                 window.scrollBy({
                     top: additionalScroll,
                     behavior: 'instant'
                 });
-                
+
                 console.log(`[Scroll] Scrolled to block ${targetIndex}, offset ${(relativePosition * 100).toFixed(1)}% for line ${line}`);
             } else {
                 // No range info, just scroll to block start
@@ -460,7 +497,7 @@ function startScrollReporting() {
     if (scrollReportInterval) {
         return; // Already running
     }
-    
+
     console.log('[Scroll] Starting periodic scroll reporting');
     scrollReportInterval = setInterval(() => {
         const percentage = getCurrentScrollPercentage();

@@ -34,10 +34,16 @@ export interface DocCommentBlock {
     };
 }
 
+export interface BlockOutput {
+    line: number; // 0-based relative to the start of the code block
+    content: string;
+    severity: number;
+}
+
 export interface CodeBlock {
     type: 'code';
     source: string;
-    output?: string;
+    outputs?: BlockOutput[];
     range: {
         startLine: number;
         endLine: number;
@@ -46,8 +52,7 @@ export interface CodeBlock {
 
 /**
  * Build notebook blocks for a Lean4 file.
- *
- * IMPORTANT (design note):
+// ... (omitting unchanged comments for brevity if possible, but tool requires context match)
  * - The structural split into `/ -! ... -/` (module docs), `/-- ... -/` (doc comments), and code blocks
  *   is currently done by a lightweight *textual lexer* (`splitLeanDocComments`).
  *   This is NOT the official Lean parser, and it can be sensitive to edge-cases.
@@ -56,17 +61,20 @@ export interface CodeBlock {
  * - We still rely on the running Lean language server (via VS Code diagnostics) to attach execution
  *   results such as `#eval` outputs.
  */
-export async function parseLeanFileWithLSP(document: vscode.TextDocument): Promise<NotebookBlock[]> {
+export async function parseLeanFileWithLSP(
+    document: vscode.TextDocument,
+    onUpdate?: (blocks: NotebookBlock[]) => void
+): Promise<NotebookBlock[]> {
     console.log('[Notebook Parser] Starting parse for:', document.fileName);
 
     // Phase 1 (lexical): split /-! and /-- blocks from code using a textual scan.
     const lex = splitLeanDocComments(document.getText(), document);
     console.log(`[Notebook Parser] Lexical split: ${lex.length} blocks`);
-    
+
     // Phase 1.5: Expand comment blocks to extract mermaid diagrams
     const expandedLex = lex.flatMap(b => expandCommentBlock(b));
     console.log(`[Notebook Parser] After mermaid expansion: ${expandedLex.length} blocks`);
-    
+
     // Debug: log mermaid blocks
     const mermaidBlocks = expandedLex.filter(b => b.type === 'mermaid');
     if (mermaidBlocks.length > 0) {
@@ -77,10 +85,10 @@ export async function parseLeanFileWithLSP(document: vscode.TextDocument): Promi
             }
         });
     }
-    
+
     const blocks: NotebookBlock[] = expandedLex.map(b => {
         if (b.type === 'code') {
-            return { type: 'code', source: b.source, output: undefined, range: b.range };
+            return { type: 'code', source: b.source, outputs: [], range: b.range };
         }
         if (b.type === 'module-doc') {
             return { type: 'module-doc', content: b.content, range: b.range };
@@ -91,13 +99,19 @@ export async function parseLeanFileWithLSP(document: vscode.TextDocument): Promi
         return { type: 'doc-comment', content: b.content, range: b.range };
     });
 
+    // IMMEDIATE UPDATE: Send preliminary blocks (no execution results yet)
+    if (onUpdate) {
+        console.log('[Notebook Parser] Triggering immediate update with lexical blocks');
+        onUpdate([...blocks]); // Send a copy
+    }
+
     // Phase 2 (LSP/Lean server): Start the LSP client and ensure document is opened.
     // This triggers elaboration and diagnostics (including #eval results).
     // Strategy: If the official Lean4 extension is active, rely on its diagnostics.
     // Otherwise, start our own LSP client.
     const officialLean4Extension = vscode.extensions.getExtension('leanprover.lean4');
     const useOfficialExtension = officialLean4Extension && officialLean4Extension.isActive;
-    
+
     if (useOfficialExtension) {
         console.log('[Notebook Parser] Official Lean4 extension is active; using its diagnostics');
     } else {
@@ -124,27 +138,32 @@ async function attachDiagnostics(
 ): Promise<void> {
     const diagnostics = vscode.languages.getDiagnostics(document.uri);
     console.log(`[attachDiagnostics] Got ${diagnostics.length} diagnostics from VS Code for ${document.uri.fsPath}`);
-    
+
     for (const block of blocks) {
         if (block.type !== 'code') continue;
-        
+
         // Find diagnostics that fall within this code block
         const blockDiagnostics = diagnostics.filter(diag =>
             diag.range.start.line >= block.range.startLine &&
             diag.range.end.line <= block.range.endLine
         );
-        
+
         // Extract #eval results or other info messages
-        const outputs: string[] = [];
+        const outputs: BlockOutput[] = [];
         for (const diag of blockDiagnostics) {
             if (diag.severity === vscode.DiagnosticSeverity.Information) {
-                outputs.push(diag.message);
+                const relativeLine = diag.range.start.line - block.range.startLine;
+                outputs.push({
+                    line: relativeLine,
+                    content: diag.message,
+                    severity: diag.severity
+                });
             }
         }
-        
+
         if (outputs.length > 0) {
             console.log(`[attachDiagnostics] Attached ${outputs.length} outputs to code block at lines ${block.range.startLine}-${block.range.endLine}`);
-            block.output = outputs.join('\n');
+            block.outputs = outputs;
         }
     }
 }

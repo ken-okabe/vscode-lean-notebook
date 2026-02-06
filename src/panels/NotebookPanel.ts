@@ -97,14 +97,14 @@ export class NotebookPanel {
         if (NotebookPanel.currentPanel) {
             NotebookPanel.currentPanel._panel.reveal(column);
             NotebookPanel.currentPanel._document = document;
-            
+
             // Store the pending scroll line
             NotebookPanel.currentPanel._pendingScrollLine = scrollLine;
             console.log(`[createOrShow] Stored pending scroll to line ${scrollLine}`);
-            
+
             // Update - rendering complete handler will execute the scroll
             NotebookPanel.currentPanel._update();
-            
+
             return;
         }
 
@@ -120,7 +120,7 @@ export class NotebookPanel {
         );
 
         NotebookPanel.currentPanel = new NotebookPanel(panel, extensionUri, document);
-        
+
         // Store the pending scroll line - rendering complete handler will execute it
         NotebookPanel.currentPanel._pendingScrollLine = scrollLine;
         console.log(`[createOrShow] Stored initial scroll to line ${scrollLine} for new panel`);
@@ -134,7 +134,7 @@ export class NotebookPanel {
         return new Promise((resolve) => {
             this._scrollPositionPromise = resolve;
             this._panel.webview.postMessage({ command: 'getScrollPosition' });
-            
+
             // Timeout after 500ms
             setTimeout(() => {
                 if (this._scrollPositionPromise) {
@@ -172,32 +172,41 @@ export class NotebookPanel {
         try {
             // Parse the document based on file type
             const isMarkdown = this._document.languageId === 'markdown' || this._document.fileName.endsWith('.md');
-            
+
             let blocks: any[];
-            
+
             if (isMarkdown) {
                 // Parse as Markdown
                 const text = this._document.getText();
                 blocks = parseMarkdownFile(text);
                 console.log("NotebookPanel: Parsed Markdown with " + blocks.length + " blocks.");
+                webview.postMessage({ command: 'update', blocks: blocks });
             } else {
                 // Parse as Lean:
                 // - structural split is a textual scan (see `splitLeanDocComments`)
                 // - #eval results are attached via Lean server diagnostics
                 console.log("NotebookPanel: Parsing Lean file (lexical split + diagnostics)...");
-                blocks = await parseLeanFileWithLSP(this._document);
-                console.log("NotebookPanel: Parsed " + blocks.length + " blocks.");
-                
+
+                // Use the onUpdate callback to stream initial blocks immediately
+                blocks = await parseLeanFileWithLSP(this._document, (partialBlocks) => {
+                    console.log(`[NotebookPanel] Received partial update with ${partialBlocks.length} blocks`);
+                    webview.postMessage({ command: 'update', blocks: partialBlocks });
+                });
+
+                console.log("NotebookPanel: Parsed " + blocks.length + " blocks (final).");
+                webview.postMessage({ command: 'update', blocks: blocks });
+
                 // Note: Diagnostics are already attached by the notebook parser
             }
-
-            // Send to webview
-            webview.postMessage({ command: 'update', blocks: blocks });
         } catch (e) {
             console.error("Error in _update:", e);
             // No fallback: if LSP parsing fails, send an empty update.
             webview.postMessage({ command: 'update', blocks: [] });
         }
+
+        // Update Title
+        const fileName = this._document.fileName.split(/[/\\]/).pop() || 'Notebook';
+        this._panel.title = fileName;
     }
 
     private _getWebviewContent(webview: vscode.Webview) {
@@ -211,12 +220,12 @@ export class NotebookPanel {
         // Vendors
         const vanUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'van.min.js'));
         const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'marked.min.js'));
-        
+
         // Prism.js for syntax highlighting
         const prismJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism.min.js'));
         const prismLightCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism-github-light.css'));
         const prismDarkCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism-github-dark.css'));
-        
+
         // Mermaid for diagrams
         const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'mermaid.min.js'));
 
