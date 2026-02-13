@@ -87,9 +87,19 @@ body {
     margin-bottom: 4px;
     background-color: rgba(40, 167, 69, 0.06);
     /* Light green tint */
-    border-left: 4px solid rgba(40, 167, 69, 0.5);
-    /* Green left border */
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 4px;
+}
+
+/* Reset code styles inside pre to prevent First-Line Shift caused by padding */
+.doc-comment-cell pre code,
+.module-doc-cell pre code,
+.markdown-cell pre code {
+    padding: 0;
+    background-color: transparent;
+    border-radius: 0;
+    font-size: inherit;
+    font-family: inherit;
 }
 
 .doc-comment-cell h1,
@@ -133,6 +143,34 @@ body {
     border-radius: 4px;
     overflow: hidden;
     background-color: var(--code-bg);
+}
+
+/* Embedded Snippets (in Doc Comments) */
+.doc-comment-cell pre,
+.module-doc-cell pre,
+.markdown-cell pre {
+    /* Stronger distinction for Light Mode */
+    background-color: #f6f8fa;
+    /* GitHub light code block */
+    border: 1px solid #d0d7de;
+    border-left: 4px solid #007acc;
+    /* Blue accent to signal "reference" */
+    border-radius: 4px;
+    padding: 12px;
+    margin: 12px 0;
+    overflow-x: auto;
+    tab-size: 4;
+}
+
+body.vscode-dark .doc-comment-cell pre,
+body.vscode-dark .module-doc-cell pre,
+body.vscode-dark .markdown-cell pre {
+    /* Stronger distinction for Dark Mode */
+    background-color: #161b22;
+    /* GitHub dark code block */
+    border: 1px solid #30363d;
+    border-left: 4px solid #4ec9b0;
+    /* Teal accent matches our eval result color */
 }
 
 .lean-source {
@@ -280,4 +318,27 @@ body {
 body.vscode-light .token.eval-result {
     color: #008000 !important;
     /* Darker green/teal for light mode */
+}
+
+/* Table Styling */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 1em;
+}
+
+th,
+td {
+    border: 1px solid var(--vscode-widget-border, #ccc);
+    padding: 6px 13px;
+    text-align: left;
+}
+
+tr:nth-child(2n) {
+    background-color: var(--vscode-textCodeBlock-background);
+}
+
+th {
+    font-weight: bold;
+    background-color: var(--vscode-textCodeBlock-background);
 }

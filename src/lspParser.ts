@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
+import { generateBlockId } from './utils/hashing';
 
 import { splitLeanDocComments, expandCommentBlock } from './leanCommentParser';
 import { leanLspManager } from './leanLspClient';
 
-export type NotebookBlock = ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock;
+export type NotebookBlock = (ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock) & { id: string };
 
 export interface MermaidBlock {
     type: 'mermaid';
@@ -86,17 +87,30 @@ export async function parseLeanFileWithLSP(
         });
     }
 
+    // ID Generation Context
+    const occurrenceMap = new Map<string, number>();
+
     const blocks: NotebookBlock[] = expandedLex.map(b => {
+        // Generate Stable ID
+        // key = type + content
+        // We accumulate occurrences to distinguish identical blocks
+        const contentKey = b.type === 'code' || b.type === 'mermaid' ? b.source : b.content;
+        const key = `${b.type}:${contentKey}`;
+        const count = occurrenceMap.get(key) || 0;
+        occurrenceMap.set(key, count + 1);
+
+        const id = generateBlockId(b.type, contentKey, count);
+
         if (b.type === 'code') {
-            return { type: 'code', source: b.source, outputs: [], range: b.range };
+            return { type: 'code', source: b.source, outputs: [], range: b.range, id };
         }
         if (b.type === 'module-doc') {
-            return { type: 'module-doc', content: b.content, range: b.range };
+            return { type: 'module-doc', content: b.content, range: b.range, id };
         }
         if (b.type === 'mermaid') {
-            return { type: 'mermaid', source: b.source, range: b.range };
+            return { type: 'mermaid', source: b.source, range: b.range, id };
         }
-        return { type: 'doc-comment', content: b.content, range: b.range };
+        return { type: 'doc-comment', content: b.content, range: b.range, id };
     });
 
     // IMMEDIATE UPDATE: Send preliminary blocks (no execution results yet)

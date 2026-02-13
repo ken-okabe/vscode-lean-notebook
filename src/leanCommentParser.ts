@@ -110,16 +110,50 @@ export function splitLeanDocComments(text: string, document?: vscode.TextDocumen
   }
 
   function pushComment(kind: 'module-doc' | 'doc-comment', content: string, startOffset: number, endOffset: number) {
+    const dedentedContent = dedent(content);
     if (!document) {
       const startLine = text.slice(0, startOffset).split('\n').length - 1;
       const endLine = startLine + (content.split('\n').length - 1);
-      blocks.push({ type: kind, content: content.trim(), range: { startLine, endLine } } as any);
+      blocks.push({ type: kind, content: dedentedContent, range: { startLine, endLine } } as any);
       return;
     }
     const startPos = document.positionAt(startOffset);
     const endPos = document.positionAt(endOffset + 2);
-    blocks.push({ type: kind, content: content.trim(), range: { startLine: startPos.line, endLine: endPos.line } } as any);
+    blocks.push({ type: kind, content: dedentedContent, range: { startLine: startPos.line, endLine: endPos.line } } as any);
   }
+}
+
+/**
+ * Remove common leading indentation from a multi-line string.
+ * Ignores empty lines when calculating common indentation.
+ */
+function dedent(str: string): string {
+  const lines = str.split('\n');
+  let minIndent = Infinity;
+
+  // Calculate min indent
+  // We start from line index 1 because the first line is usually " /-- content",
+  // where the indentation is determined by the delimiter, not the block structure.
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length === 0) continue;
+    const indent = line.match(/^\s*/)?.[0].length ?? 0;
+    if (indent < minIndent) minIndent = indent;
+  }
+
+  // If only one line or no indented lines found in body, just trim.
+  // But we should still respect the first line's content.
+  if (minIndent === Infinity) minIndent = 0;
+
+  // Remove indent and trim result
+  const dedentedLines = lines.map((line, index) => {
+    if (index === 0) return line.trim(); // Always just trim the first line
+    if (line.trim().length === 0) return '';
+    // Safety check: if minIndent > line length (shouldn't happen with correct calculation), slice(0)
+    return line.length >= minIndent ? line.slice(minIndent) : line.trim();
+  });
+
+  return dedentedLines.join('\n').trim();
 }
 
 function trimEmptyLines(code: string): string {

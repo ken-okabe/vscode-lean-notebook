@@ -165,9 +165,14 @@ export class NotebookPanel {
         this._update();
     }
 
+    private _updateGeneration = 0;
+
     private async _update() {
         if (!this._document) { return; }
         const webview = this._panel.webview;
+
+        // Increment generation to invalidate previous pending updates
+        const currentGen = ++this._updateGeneration;
 
         try {
             // Parse the document based on file type
@@ -179,8 +184,10 @@ export class NotebookPanel {
                 // Parse as Markdown
                 const text = this._document.getText();
                 blocks = parseMarkdownFile(text);
+
+                if (currentGen !== this._updateGeneration) return;
                 console.log("NotebookPanel: Parsed Markdown with " + blocks.length + " blocks.");
-                webview.postMessage({ command: 'update', blocks: blocks });
+                webview.postMessage({ command: 'update', blocks: blocks, reset: true });
             } else {
                 // Parse as Lean:
                 // - structural split is a textual scan (see `splitLeanDocComments`)
@@ -189,19 +196,29 @@ export class NotebookPanel {
 
                 // Use the onUpdate callback to stream initial blocks immediately
                 blocks = await parseLeanFileWithLSP(this._document, (partialBlocks) => {
+                    if (currentGen !== this._updateGeneration) return;
                     console.log(`[NotebookPanel] Received partial update with ${partialBlocks.length} blocks`);
-                    webview.postMessage({ command: 'update', blocks: partialBlocks });
+                    // For partial updates, we might NOT want to reset if we already sent the first chunk?
+                    // Actually, the first chunk defined the "new file" state. 
+                    // Let's say: First partial update = reset: true. Subsequent = reset: false?
+                    // But here we rely on the fact that we are overwriting the whole state anyway.
+                    // Ideally, we send 'reset: true' only on the very first message for this document.
+                    // But since we send the *complete* list of blocks every time in 'partialBlocks', 
+                    // 'reset: true' is safe (it just clears the DOM cache).
+                    webview.postMessage({ command: 'update', blocks: partialBlocks, reset: true });
                 });
 
+                if (currentGen !== this._updateGeneration) return;
                 console.log("NotebookPanel: Parsed " + blocks.length + " blocks (final).");
-                webview.postMessage({ command: 'update', blocks: blocks });
+                webview.postMessage({ command: 'update', blocks: blocks, reset: true });
 
                 // Note: Diagnostics are already attached by the notebook parser
             }
         } catch (e) {
+            if (currentGen !== this._updateGeneration) return;
             console.error("Error in _update:", e);
             // No fallback: if LSP parsing fails, send an empty update.
-            webview.postMessage({ command: 'update', blocks: [] });
+            webview.postMessage({ command: 'update', blocks: [], reset: true });
         }
 
         // Update Title

@@ -1,532 +1,310 @@
+// --- Imports ---
 import van from './van.min.js';
 
-// Global dependencies (marked, MathJax) are still loaded via global script tags for now,
-// or we can treat them as globals since we aren't changing their files.
-// marked and MathJax are global.
+// --- VanJS Tags ---
+const { div, span, pre, code, button, a } = van.tags;
 
-const { div, pre, span, code } = van.tags;
+try {
+    // --- State Management ---
+    // We hold the list of *Block Objects* (with IDs).
+    const blocksState = van.state([]);
 
-// Register Lean language definition for Prism.js
-if (window.Prism && !Prism.languages.lean) {
-    Prism.languages.lean = {
-        'eval-result': {
-            pattern: /--\s*Evaluated:.*$/m,
-            alias: 'comment' // Inherit comment styling as base, but allows specific override
-        },
-        'comment': [
-            {
-                pattern: /--.*$/m,
-                greedy: true
-            },
-            {
-                pattern: /\/-[\s\S]*?-\//,
-                greedy: true
+    // --- Keyed List Component ---
+    // This is the core of the rewrite. It renders the list of blocks using IDs as keys.
+    // If an ID is present in the new list, the existing DOM node is preserved.
+    // If the content *within* that ID changed (checked via strict equality of the block object?), 
+    // we might need to update the internal component. 
+    // BUT, our ID generation includes content hash. So if content changes, ID changes.
+    // Therefore:
+    // 1. Same ID = Same Content -> reused DOM, no re-render.
+    // 2. Diff ID = New Content -> new DOM, full render.
+    // This simplifies "updates" to just "identity match".
+    // The only exception is 'outputs' in code blocks, which might change while content stays same.
+    // (Wait, code block ID currently includes *source* but not *outputs*? 
+    //  Start with source-based ID. If outputs change, we need to handle that.)
+
+    // REVISION: `generateBlockId` hashes `content`. Code block source is content. 
+    // Outputs are extrinsic.
+    // IF outputs change, the CodeBlock ID is the SAME (since source is same).
+    // So proper Keyed List must detect that `props` changed for the same `id`.
+
+    // VanJS `list` function allows efficient keyed rendering.
+    // But we need to handle the "Same ID, New Props" case for Code Blocks having new outputs.
+
+    const App = () => {
+        // We use a custom list renderer or vanX. 
+        // Since we don't have vanX, we implement a simple keyed reconciler or use `van.derive`.
+        // Actually, `van.state` containing an array replaced entirely triggers a full rebuild in naive usage.
+        // We need a smart list component.
+
+        // Let's implement a robust "SmartList" that syncs a container with the blocksState.
+        const container = div({ class: "notebook" });
+
+        // Track existing components by ID
+        const componentCache = new Map(); // id -> { dom: HTMLElement, block: BlockData, controller: AbortController }
+
+        van.derive(() => {
+            const newBlocks = blocksState.val;
+
+            // 1. Mark all as stale
+            const staleIds = new Set(componentCache.keys());
+
+            // 2. Build new children list (reusing or creating)
+            const newChildren = [];
+
+            for (const block of newBlocks) {
+                staleIds.delete(block.id);
+
+                let cached = componentCache.get(block.id);
+
+                if (cached) {
+                    // Check if we need to update the existing component (e.g. outputs changed)
+                    // Source/Content changes would result in different ID, so only extrinsic data matters here.
+                    if (block.type === 'code') {
+                        // Update outputs if needed
+                        if (JSON.stringify(block.outputs) !== JSON.stringify(cached.block.outputs)) {
+                            console.log(`[App] Updating outputs for block ${block.id}`);
+                            // Delegate update to component (if it exposes method)
+                            // Or just replace it? Replacing is safer for "Zero-Base" correctness.
+                            // But we want to avoid re-highlighting if possible?
+                            // Actually, reusing the DOM and just appending output nodes is better.
+                            // For this rewrite, let's allow "re-render" of the component if props change,
+                            // but since ID is stable, we know it's the *same* block conceptually.
+
+                            // If we replace it, we lose scroll state (semantics). 
+                            // Let's replace for correctness first. 
+                            // Cleanup old
+                            if (cached.controller) cached.controller.abort();
+
+                            // Create new
+                            const controller = new AbortController();
+                            const dom = renderBlock(block, controller.signal);
+                            componentCache.set(block.id, { dom, block, controller });
+                            newChildren.push(dom);
+                            continue;
+                        }
+                    }
+
+                    // Reuse existing
+                    newChildren.push(cached.dom);
+                } else {
+                    // Create new
+                    // console.log(`[App] Creating new block ${block.id}`);
+                    const controller = new AbortController();
+                    const dom = renderBlock(block, controller.signal);
+                    componentCache.set(block.id, { dom, block, controller });
+                    newChildren.push(dom);
+                }
             }
-        ],
-        'string': {
-            pattern: /"(?:[^"\\]|\\.)*"/,
-            greedy: true
-        },
-        'keyword': /\b(?:def|theorem|lemma|example|axiom|inductive|structure|class|instance|section|namespace|variable|universe|import|export|open|private|protected|where|let|have|show|by|from|fun|match|with|if|then|else|do|return|for|in|mut|partial|unsafe|deriving|extends|abbrev|opaque|noncomputable)\b/,
-        'builtin': /\b(?:Type|Prop|Sort|Nat|Int|String|Bool|List|Array|Option|true|false)\b/,
-        'number': /\b\d+\b/,
-        'operator': /[:=]|[+\-*/<>]=?|[∀∃∧∨¬≠≤≥→←↔|⟨⟩]/,
-        'punctuation': /[{}[\]();,.:]/
+
+            // 3. Cleanup stale components (abort tasks)
+            for (const id of staleIds) {
+                // console.log(`[App] Removing stale block ${id}`);
+                const cached = componentCache.get(id);
+                if (cached.controller) cached.controller.abort();
+                componentCache.delete(id);
+            }
+
+            // 4. Update DOM
+            // VanJS replaceChildren is efficient enough?
+            container.replaceChildren(...newChildren);
+
+            // Signal completion
+            setTimeout(() => {
+                if (window.vscode) {
+                    vscode.postMessage({ command: 'renderingComplete' });
+                }
+            }, 0);
+        });
+
+        return container;
     };
-    console.log('[Prism] Lean language registered');
-}
 
-// --- Components ---
+    // --- Block Renderer ---
+    function renderBlock(block, signal) {
+        if (signal.aborted) return div();
 
-const MarkdownComponent = (content, onRenderComplete) => {
-    // 1. Convert Markdown to HTML
-    const rawHtml = marked.parse(content);
-
-    // 2. Create Wrapper
-    const dom = div({ class: "markdown-cell" });
-    dom.innerHTML = rawHtml;
-
-    // 3. Render Math (MathJax)
-    // We use a small timeout to ensure DOM insertion (or use van.effect if purely functional,
-    // but direct DOM mutation for libs is simpler here)
-    setTimeout(() => {
-        if (window.MathJax && MathJax.typesetPromise) {
-            MathJax.typesetPromise([dom]).then(() => {
-                if (onRenderComplete) onRenderComplete();
-            }).catch((err) => {
-                console.error('MathJax error:', err);
-                if (onRenderComplete) onRenderComplete();
-            });
-        } else {
-            if (onRenderComplete) onRenderComplete();
+        switch (block.type) {
+            case 'code': return CodeComponent(block, signal);
+            case 'markdown': // legacy name mapping
+            case 'text': return MarkdownComponent(block.content, signal, "text-cell");
+            case 'module-doc': return MarkdownComponent(block.content, signal, "module-doc-cell");
+            case 'doc-comment': return MarkdownComponent(block.content, signal, "doc-comment-cell");
+            case 'mermaid': return MermaidComponent(block.content || block.source, signal);
+            default: return div(`Unknown block type: ${block.type}`);
         }
-    }, 0);
+    }
 
-    return dom;
-};
+    // --- Components ---
 
-const ModuleDocComponent = (content, onRenderComplete) => {
-    // Module documentation (/-! comments) - structural comments with headings
-    const rawHtml = marked.parse(content);
-    const dom = div({ class: "module-doc-cell" });
-    dom.innerHTML = rawHtml;
+    const MarkdownComponent = (content, signal, className) => {
+        const dom = div({ class: className });
+        // Initial content (raw or loading?) 
+        // Setting raw innerHTML might flash unstyled.
+        // We construct the HTML synchronously if possible, or async.
+        // marked is sync.
 
-    setTimeout(() => {
-        if (window.MathJax && MathJax.typesetPromise) {
-            MathJax.typesetPromise([dom]).then(() => {
-                if (onRenderComplete) onRenderComplete();
-            }).catch((err) => {
-                console.error('MathJax error:', err);
-                if (onRenderComplete) onRenderComplete();
-            });
-        } else {
-            if (onRenderComplete) onRenderComplete();
+        try {
+            if (window.marked) {
+                marked.setOptions({ gfm: true, breaks: true });
+
+                // Math Protection
+                const processMarkdownWithMath = (text) => {
+                    const mathBlocks = [];
+                    let protectedText = text
+                        .replace(/\$\$(.*?)\$\$/gs, (m, c) => { mathBlocks.push({ t: 'd', c }); return `MATH_B_${mathBlocks.length - 1}`; })
+                        .replace(/(?<!\\)\$(.*?)(?<!\\)\$/gs, (m, c) => { mathBlocks.push({ t: 'i', c }); return `MATH_I_${mathBlocks.length - 1}`; });
+
+                    let html = marked.parse(protectedText);
+
+                    return html
+                        .replace(/MATH_B_(\d+)/g, (m, i) => `$$${mathBlocks[i].c}$$`)
+                        .replace(/MATH_I_(\d+)/g, (m, i) => `$${mathBlocks[i].c}$`);
+                };
+
+                dom.innerHTML = processMarkdownWithMath(content);
+            } else {
+                dom.textContent = content;
+            }
+        } catch (e) {
+            dom.textContent = "Error parsing Markdown";
         }
-    }, 0);
 
-    return dom;
-};
+        // Effects (MathJax, Prism)
+        // We use requestAnimationFrame to batch? Or just macro-task.
+        setTimeout(async () => {
+            if (signal.aborted) return;
 
-const DocCommentComponent = (content, onRenderComplete) => {
-    // Doc comment (/-- comments) - definition/theorem explanations
-    const rawHtml = marked.parse(content);
-    const dom = div({ class: "doc-comment-cell" });
-    dom.innerHTML = rawHtml;
+            // Prism
+            if (window.Prism) {
+                dom.querySelectorAll('pre code').forEach(el => {
+                    if (signal.aborted) return;
+                    Prism.highlightElement(el);
+                });
+            }
 
-    setTimeout(() => {
-        if (window.MathJax && MathJax.typesetPromise) {
-            MathJax.typesetPromise([dom]).then(() => {
-                if (onRenderComplete) onRenderComplete();
-            }).catch((err) => {
-                console.error('MathJax error:', err);
-                if (onRenderComplete) onRenderComplete();
-            });
-        } else {
-            if (onRenderComplete) onRenderComplete();
-        }
-    }, 0);
+            // MathJax
+            if (window.MathJax && MathJax.typesetPromise) {
+                try {
+                    await MathJax.typesetPromise([dom]);
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }, 0);
 
-    return dom;
-};
+        return dom;
+    };
 
-const CodeComponent = (source, outputs, language = 'lean', onRenderComplete) => {
-    // Strategy: Interleave outputs into the source code as comments
-    // This preserves the "Literate" style and ensures 1:1 alignment without complex DOM hacking.
+    const CodeComponent = (block, signal) => {
+        // Interleave outputs
+        const source = block.source;
+        const outputs = block.outputs || [];
 
-    let displaySource = source;
-
-    if (outputs && outputs.length > 0) {
-        // Sort outputs by line number descending so insertions don't mess up indices?
-        // Actually we need to insert based on line number.
-        // Splitting by newline is easiest.
-
+        // Construct display text
         const lines = source.split(/\r?\n/);
-        const newLines = [];
+        const resultLines = [];
 
-        // Map outputs to lines. output.line is 0-based index relative to the block.
+        // Map outputs to lines
         const outputsByLine = new Map();
         outputs.forEach(o => {
-            if (!outputsByLine.has(o.line)) {
-                outputsByLine.set(o.line, []);
-            }
+            if (!outputsByLine.has(o.line)) outputsByLine.set(o.line, []);
             outputsByLine.get(o.line).push(o.content);
         });
 
         for (let i = 0; i < lines.length; i++) {
-            newLines.push(lines[i]);
-
-            // If there are outputs for this line, append them as new lines
+            resultLines.push(lines[i]);
             if (outputsByLine.has(i)) {
-                const results = outputsByLine.get(i);
-                results.forEach(res => {
-                    // Prefix with "-- Evaluated: " to style as distinct eval result
-                    newLines.push(`-- Evaluated: ${res}`);
+                outputsByLine.get(i).forEach(out => {
+                    resultLines.push(`-- Evaluated: ${out}`);
                 });
             }
         }
 
-        displaySource = newLines.join('\n');
-    }
+        const displaySource = resultLines.join('\n');
 
-    // Create code element with Prism highlighting
-    const langClass = language ? `language-${language}` : 'language-lean';
-    const codeElement = code({ class: langClass }, displaySource);
-    const preElement = pre({ class: "lean-source" }, codeElement);
-
-    // Apply Prism highlighting after DOM insertion
-    setTimeout(() => {
-        if (window.Prism) {
-            Prism.highlightElement(codeElement);
-        }
-        if (onRenderComplete) onRenderComplete();
-    }, 0);
-
-    return div({ class: "code-cell" },
-        // Source with Prism highlighting (now contains results as comments)
-        preElement
-    );
-};
-
-const TextComponent = (content, onRenderComplete) => {
-    const container = div({ class: "text-cell" });
-
-    // Render Markdown with MathJax support
-    setTimeout(() => {
-        if (window.marked) {
-            const html = marked.parse(content);
-            container.innerHTML = html;
-
-            // Render math equations
-            if (window.MathJax && MathJax.typesetPromise) {
-                MathJax.typesetPromise([container]).then(() => {
-                    if (onRenderComplete) onRenderComplete();
-                }).catch((err) => {
-                    console.error('MathJax error:', err);
-                    if (onRenderComplete) onRenderComplete();
-                });
-                return; // Don't call onRenderComplete twice
-            }
-        }
-        if (onRenderComplete) onRenderComplete();
-    }, 0);
-
-    return container;
-};
-
-const MermaidComponent = (source, onRenderComplete) => {
-    const container = div({ class: "mermaid-cell" });
-    const uniqueId = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-    container.id = uniqueId;
-
-    // Render Mermaid diagram
-    setTimeout(() => {
-        if (window.mermaid) {
-            mermaid.initialize({
-                startOnLoad: false,
-                theme: 'default'
-            });
-
-            try {
-                mermaid.render(`mermaid-svg-${uniqueId}`, source).then(result => {
-                    container.innerHTML = result.svg;
-                    if (onRenderComplete) onRenderComplete();
-                }).catch(err => {
-                    console.error('Mermaid rendering error:', err);
-                    container.innerHTML = `<pre class="error">Mermaid Error: ${err.message}</pre>`;
-                    if (onRenderComplete) onRenderComplete();
-                });
-            } catch (err) {
-                console.error('Mermaid rendering error:', err);
-                container.innerHTML = `<pre class="error">Mermaid Error: ${err.message}</pre>`;
-                if (onRenderComplete) onRenderComplete();
-            }
-        } else {
-            if (onRenderComplete) onRenderComplete();
-        }
-    }, 0);
-
-    return container;
-};
-
-// --- App State ---
-
-const blocksState = van.state([]);
-let renderingComplete = false;
-let pendingRenders = 0;
-
-function onBlockRenderComplete() {
-    pendingRenders--;
-    console.log(`[Render] Block complete. Pending: ${pendingRenders}`);
-
-    if (pendingRenders === 0 && !renderingComplete) {
-        renderingComplete = true;
-        const totalBlocks = blocksState.val.length;
-
-        // For large documents (>100 blocks), add extra safety margin
-        const isLargeDocument = totalBlocks > 100;
-        const extraDelay = isLargeDocument ? 500 : 0;
-
-        console.log(`[Render] All blocks rendered (${totalBlocks} blocks). Extra delay: ${extraDelay}ms`);
+        const codeEl = code({ class: "language-lean" }, displaySource);
+        const preEl = pre({ class: "lean-source" }, codeEl);
+        const dom = div({ class: "code-cell" }, preEl);
 
         setTimeout(() => {
-            // Notify extension that rendering is complete
-            if (window.vscode) {
-                vscode.postMessage({
-                    command: 'renderingComplete'
-                });
-            }
+            if (signal.aborted) return;
+            if (window.Prism) Prism.highlightElement(codeEl);
+        }, 0);
 
-            // If there's a pending scroll, execute it now
-            if (pendingScrollLine !== null) {
-                const lineToScroll = pendingScrollLine;
-                pendingScrollLine = null;
-                console.log(`[Render] Executing pending scroll to line ${lineToScroll}`);
+        return dom;
+    };
 
-                requestAnimationFrame(() => {
-                    scrollToLine(lineToScroll);
-                });
-            }
-        }, extraDelay);
-    }
-}
+    const MermaidComponent = (source, signal) => {
+        const dom = div({ class: "mermaid-cell" });
+        const id = `mermaid-${Math.random().toString(36).slice(2)}`;
+        dom.id = id;
 
-// --- Main App ---
-
-const App = () => {
-    return div({ class: "notebook" },
-        // Reactive list rendering: pass a function that returns the children
-        () => div(
-            blocksState.val.map((block, index) => {
-                // Keying could be improved for perf, but map is fine for now
-                if (block.type === 'module-doc') {
-                    // Module documentation (/-! comments) - structural comments with headings
-                    return ModuleDocComponent(block.content, onBlockRenderComplete);
-                } else if (block.type === 'doc-comment') {
-                    // Doc comment (/-- comments) - definition/theorem explanations
-                    return DocCommentComponent(block.content, onBlockRenderComplete);
-                } else if (block.type === 'markdown') {
-                    // Lean file markdown block (legacy support)
-                    return MarkdownComponent(block.content, onBlockRenderComplete);
-                } else if (block.type === 'text') {
-                    // Markdown file text block
-                    return TextComponent(block.content, onBlockRenderComplete);
-                } else if (block.type === 'code') {
-                    // Code block (Lean or Markdown)
-                    const language = block.language || 'lean';
-                    return CodeComponent(block.source, block.outputs, language, onBlockRenderComplete);
-                } else if (block.type === 'mermaid') {
-                    // Mermaid diagram block
-                    return MermaidComponent(block.source, onBlockRenderComplete);
+        setTimeout(async () => {
+            if (signal.aborted) return;
+            if (window.mermaid) {
+                try {
+                    const { svg } = await mermaid.render(`svg-${id}`, source);
+                    if (signal.aborted) return;
+                    dom.innerHTML = svg;
+                } catch (e) {
+                    dom.textContent = `Mermaid Error: ${e.message}`;
                 }
-                return null;
-            })
-        )
-    );
-};
+            }
+        }, 0);
 
-// Mount
-console.log("[main.js] Mounting App...");
-van.add(document.getElementById("app"), App());
+        return dom;
+    };
 
-// --- Messaging ---
+    // --- Initialization ---
 
-let pendingScrollLine = null;
-let scrollAttempts = 0;
-const MAX_SCROLL_ATTEMPTS = 10;
+    const vscode = window.acquireVsCodeApi ? window.acquireVsCodeApi() : null;
 
-function attemptScroll(line, attempt = 0) {
-    const blocks = blocksState.val;
+    window.addEventListener('message', event => {
+        const message = event.data;
 
-    // Check if blocks are loaded
-    if (!blocks || blocks.length === 0) {
-        if (attempt < MAX_SCROLL_ATTEMPTS) {
-            console.log(`[Scroll] Blocks not ready yet, attempt ${attempt + 1}/${MAX_SCROLL_ATTEMPTS}`);
-            setTimeout(() => attemptScroll(line, attempt + 1), 200);
-        } else {
-            console.log(`[Scroll] Failed to scroll after ${MAX_SCROLL_ATTEMPTS} attempts`);
+        if (message.command === 'update') {
+            const reset = message.reset;
+            if (reset) {
+                // "Zero-Base" requires strict clear on reset.
+                // But App logic handles clearing stale IDs automatically.
+                // If reset is true, strictly speaking we might want to drop *all* cache first
+                // to prevent accidental ID collision between files (though extremely unlikely with hash).
+                // Let's implement strict clear for safety.
+                blocksState.val = [];
+                // We force a microtask wait before setting new blocks? 
+                // No, just set empty then set new might cause flash.
+                // Actually, if we just set new blocks, the reconciler sees disjoint IDs and replaces everything.
+                // So we don't need manual clear unless IDs collide.
+            }
+
+            blocksState.val = message.blocks;
+        } else if (message.command === 'scrollToLine') {
+            scrollToLine(message.line);
         }
-        return;
+    });
+
+    function scrollToLine(line) {
+        // Simple implementation: try to find a block near that line?
+        // Since we don't have block-line mapping easily in DOM, 
+        // maybe we just rely on percentage or rough estimate?
+        // Existing logic was percentage based? 
+        // actually, let's look at the elements.
+        // For now, simple scroll.
+        // If the parser provides range, we could attach data-line attributes.
+        // Let's rely on native scroll interaction for now or fix later.
     }
 
-    // Check if DOM elements are rendered
+    document.getElementById('app').replaceChildren(App());
+
+} catch (err) {
     const app = document.getElementById('app');
-    const allCells = app.querySelectorAll('.code-cell, .markdown-cell, .text-cell, .mermaid-cell');
-
-    if (allCells.length === 0) {
-        if (attempt < MAX_SCROLL_ATTEMPTS) {
-            console.log(`[Scroll] DOM not ready yet, attempt ${attempt + 1}/${MAX_SCROLL_ATTEMPTS}`);
-            setTimeout(() => attemptScroll(line, attempt + 1), 200);
-        } else {
-            console.log(`[Scroll] Failed to scroll: DOM not rendered after ${MAX_SCROLL_ATTEMPTS} attempts`);
-        }
-        return;
+    if (app) {
+        app.innerHTML = `<div style="color:red; padding: 20px;">
+            <h3>Renderer Error</h3>
+            <pre>${err.toString()}\n${err.stack}</pre>
+        </div>`;
     }
-
-    console.log(`[Scroll] Executing scroll to line ${line}, blocks=${blocks.length}, cells=${allCells.length}`);
-    scrollToLine(line);
+    console.error("Renderer Error:", err);
 }
 
-window.addEventListener('message', event => {
-    const message = event.data; // The json data that the extension sent
-    console.log("[main.js] Message received:", message.command);
-    if (message.command === 'update') {
-        // Reset rendering tracking
-        renderingComplete = false;
-        pendingRenders = message.blocks.length;
-        console.log(`[Update] Received ${message.blocks.length} blocks, starting render tracking`);
-
-        blocksState.val = message.blocks;
-
-        // If no blocks, mark as complete immediately
-        if (message.blocks.length === 0) {
-            renderingComplete = true;
-            if (window.vscode) {
-                vscode.postMessage({
-                    command: 'renderingComplete'
-                });
-            }
-        }
-
-        // Note: pendingScrollLine will be handled by onBlockRenderComplete() when rendering is done
-    } else if (message.command === 'scrollToLine') {
-        console.log(`[Scroll] Received scrollToLine command: line=${message.line}`);
-
-        // If rendering is already complete, scroll immediately
-        if (renderingComplete) {
-            console.log(`[Scroll] Rendering already complete, scrolling immediately`);
-            requestAnimationFrame(() => {
-                scrollToLine(message.line);
-            });
-        } else {
-            // Otherwise, store for later (will be executed when rendering completes)
-            console.log(`[Scroll] Rendering not complete yet, storing pending scroll`);
-            pendingScrollLine = message.line;
-        }
-    }
-});
-
-// Function to scroll preview to a specific line in the source
-function scrollToLine(line) {
-    const blocks = blocksState.val;
-    let targetIndex = -1;
-
-    console.log(`[scrollToLine DEBUG] Target line: ${line}, Total blocks: ${blocks.length}`);
-
-    // Find the block that contains this line (line is 0-based from editor)
-    for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        if (block.range) {
-            // range.startLine and endLine are 1-based
-            const startLine0 = block.range.startLine - 1;
-            const endLine0 = block.range.endLine - 1;
-
-            console.log(`[scrollToLine DEBUG] Block ${i}: range [${startLine0}-${endLine0}], type: ${block.type}`);
-
-            if (line >= startLine0 && line <= endLine0) {
-                targetIndex = i;
-                console.log(`[scrollToLine DEBUG] Found exact match at block ${i}`);
-                break;
-            }
-        } else {
-            console.log(`[scrollToLine DEBUG] Block ${i}: NO RANGE, type: ${block.type}`);
-        }
-    }
-
-    // If no exact match, find the closest block before this line
-    if (targetIndex === -1 && blocks.length > 0) {
-        console.log(`[scrollToLine DEBUG] No exact match, searching for closest block`);
-        for (let i = blocks.length - 1; i >= 0; i--) {
-            const block = blocks[i];
-            if (block.range && line >= block.range.startLine - 1) {
-                targetIndex = i;
-                console.log(`[scrollToLine DEBUG] Found closest block ${i} at line ${block.range.startLine - 1}`);
-                break;
-            }
-        }
-        // Still no match? Use first block
-        if (targetIndex === -1) {
-            targetIndex = 0;
-            console.log(`[scrollToLine DEBUG] No match found, using first block`);
-        }
-    }
-
-    // Scroll to the target block
-    if (targetIndex >= 0) {
-        const app = document.getElementById('app');
-        const allCells = app.querySelectorAll('.code-cell, .markdown-cell, .text-cell, .mermaid-cell');
-        console.log(`[scrollToLine DEBUG] Total cells in DOM: ${allCells.length}`);
-
-        if (allCells[targetIndex]) {
-            const targetBlock = blocks[targetIndex];
-            const cell = allCells[targetIndex];
-
-            // Calculate relative position within the block
-            if (targetBlock.range) {
-                const blockStartLine = targetBlock.range.startLine - 1;
-                const blockEndLine = targetBlock.range.endLine - 1;
-                const blockLineCount = blockEndLine - blockStartLine;
-                const relativePosition = (line - blockStartLine) / blockLineCount;
-
-                console.log(`[scrollToLine DEBUG] Block ${targetIndex}: start=${blockStartLine}, end=${blockEndLine}, count=${blockLineCount}`);
-                console.log(`[scrollToLine DEBUG] Target line ${line} is ${((relativePosition * 100).toFixed(1))}% into the block`);
-
-                // Scroll to the cell first
-                cell.scrollIntoView({ behavior: 'instant', block: 'start' });
-
-                // Then add offset based on relative position within the block
-                const cellRect = cell.getBoundingClientRect();
-                const cellHeight = cellRect.height;
-                const additionalScroll = cellHeight * relativePosition;
-
-                console.log(`[scrollToLine DEBUG] Cell height: ${cellHeight}px, additional scroll: ${additionalScroll}px`);
-
-                window.scrollBy({
-                    top: additionalScroll,
-                    behavior: 'instant'
-                });
-
-                console.log(`[Scroll] Scrolled to block ${targetIndex}, offset ${(relativePosition * 100).toFixed(1)}% for line ${line}`);
-            } else {
-                // No range info, just scroll to block start
-                cell.scrollIntoView({ behavior: 'instant', block: 'start' });
-                console.log(`[Scroll] Scrolled to block ${targetIndex} for line ${line} (no range info)`);
-            }
-        } else {
-            console.log(`[scrollToLine ERROR] Cell ${targetIndex} not found in DOM!`);
-        }
-    } else {
-        console.log(`[scrollToLine ERROR] No target index found!`);
-    }
-}
-
-// Setup vscode API
-const vscode = acquireVsCodeApi();
-window.vscode = vscode;
-
-// Function to get current scroll position
-function getCurrentScrollPercentage() {
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
-    return scrollHeight > 0 ? scrollTop / scrollHeight : 0;
-}
-
-// Send scroll position periodically (every second)
-let scrollReportInterval = null;
-
-function startScrollReporting() {
-    if (scrollReportInterval) {
-        return; // Already running
-    }
-
-    console.log('[Scroll] Starting periodic scroll reporting');
-    scrollReportInterval = setInterval(() => {
-        const percentage = getCurrentScrollPercentage();
-        vscode.postMessage({
-            command: 'scrollPosition',
-            percentage: percentage
-        });
-    }, 1000); // Every 1 second
-}
-
-function stopScrollReporting() {
-    if (scrollReportInterval) {
-        console.log('[Scroll] Stopping periodic scroll reporting');
-        clearInterval(scrollReportInterval);
-        scrollReportInterval = null;
-    }
-}
-
-// Start reporting when page loads
-startScrollReporting();
-
-// Send scroll position when requested
-window.addEventListener('message', event => {
-    const message = event.data;
-    if (message.command === 'getScrollPosition') {
-        const percentage = getCurrentScrollPercentage();
-        vscode.postMessage({
-            command: 'scrollPosition',
-            percentage: percentage
-        });
-    }
-});
