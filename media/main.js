@@ -4,6 +4,39 @@ import van from './van.min.js';
 // --- VanJS Tags ---
 const { div, span, pre, code, button, a } = van.tags;
 
+// Register Lean language definition for Prism.js
+if (window.Prism && !Prism.languages.lean) {
+    Prism.languages.lean = {
+        'proof-ok': {
+            pattern: /--\s*✓.*$/m,
+            alias: 'comment'
+        },
+        'eval-result': {
+            pattern: /--\s*Evaluated:.*$/m,
+            alias: 'comment'
+        },
+        'comment': [
+            {
+                pattern: /--.*$/m,
+                greedy: true
+            },
+            {
+                pattern: /\/-[\s\S]*?-\//,
+                greedy: true
+            }
+        ],
+        'string': {
+            pattern: /"(?:[^"\\]|\\.)*"/,
+            greedy: true
+        },
+        'keyword': /\b(?:def|theorem|lemma|example|axiom|inductive|structure|class|instance|section|namespace|variable|universe|import|export|open|private|protected|where|let|have|show|by|from|fun|match|with|if|then|else|do|return|for|in|mut|partial|unsafe|deriving|extends|abbrev|opaque|noncomputable)\b/,
+        'builtin': /\b(?:Type|Prop|Sort|Nat|Int|String|Bool|List|Array|Option|true|false)\b/,
+        'number': /\b\d+\b/,
+        'operator': /[:=]|[+\-*/<>]=?|[∀∃∧∨¬≠≤≥→←↔|⟨⟩]/,
+        'punctuation': /[{}()\[\],.:]/,
+    };
+}
+
 try {
     // --- State Management ---
     // We hold the list of *Block Objects* (with IDs).
@@ -205,18 +238,24 @@ try {
         const lines = source.split(/\r?\n/);
         const resultLines = [];
 
-        // Map outputs to lines
+        // Map outputs to lines (keep full output objects for severity-based rendering)
         const outputsByLine = new Map();
         outputs.forEach(o => {
             if (!outputsByLine.has(o.line)) outputsByLine.set(o.line, []);
-            outputsByLine.get(o.line).push(o.content);
+            outputsByLine.get(o.line).push(o);
         });
 
         for (let i = 0; i < lines.length; i++) {
             resultLines.push(lines[i]);
             if (outputsByLine.has(i)) {
                 outputsByLine.get(i).forEach(out => {
-                    resultLines.push(`-- Evaluated: ${out}`);
+                    if (out.severity === -1) {
+                        // Proof status (theorem/lemma/example verified)
+                        resultLines.push(`-- ✓`);
+                    } else {
+                        // Eval result
+                        resultLines.push(`-- Evaluated: ${out.content}`);
+                    }
                 });
             }
         }

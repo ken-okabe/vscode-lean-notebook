@@ -308,16 +308,28 @@ body.vscode-dark .markdown-cell pre {
 
 /* Eval Result Styling (Prism token) */
 .token.eval-result {
-    color: #4ec9b0 !important;
-    /* VS Code Teal */
-    font-style: italic;
+    color: #569cd6 !important;
+    /* VS Code Blue */
     font-weight: bold;
 }
 
 /* For Light Theme override if needed */
 body.vscode-light .token.eval-result {
+    color: #0000ff !important;
+    /* Blue for light mode */
+}
+
+/* Proof Status Styling (Prism token) */
+.token.proof-ok {
+    color: #4ec9b0 !important;
+    /* VS Code Teal/Green — matches official Lean checkmark */
+    font-weight: bold;
+}
+
+/* For Light Theme override */
+body.vscode-light .token.proof-ok {
     color: #008000 !important;
-    /* Darker green/teal for light mode */
+    /* Dark green for light mode */
 }
 
 /* Table Styling */

@@ -144,7 +144,10 @@ export async function parseLeanFileWithLSP(
 }
 
 /**
- * Attach diagnostics (like #eval results) to code blocks
+ * Attach diagnostics (like #eval results) and proof status to code blocks.
+ *
+ * - Information diagnostics (e.g. #eval) → rendered as "-- Evaluated: ..."
+ * - theorem/lemma/example declarations with no errors → rendered as "-- ✓"
  */
 async function attachDiagnostics(
     document: vscode.TextDocument,
@@ -152,6 +155,13 @@ async function attachDiagnostics(
 ): Promise<void> {
     const diagnostics = vscode.languages.getDiagnostics(document.uri);
     console.log(`[attachDiagnostics] Got ${diagnostics.length} diagnostics from VS Code for ${document.uri.fsPath}`);
+
+    // Only attach proof status if Lean has actually processed the file
+    // (i.e., there are diagnostics OR the file is small/trivial).
+    const hasDiagnostics = diagnostics.length > 0;
+
+    // Regex to detect theorem/lemma/example declarations at the start of a line
+    const proofDeclPattern = /^\s*(?:private\s+|protected\s+)?(?:noncomputable\s+)?(?:theorem|lemma|example)\b/;
 
     for (const block of blocks) {
         if (block.type !== 'code') continue;
@@ -172,6 +182,31 @@ async function attachDiagnostics(
                     content: diag.message,
                     severity: diag.severity
                 });
+            }
+        }
+
+        // Detect theorem/lemma/example declarations and check for proof success
+        if (hasDiagnostics) {
+            const lines = block.source.split(/\r?\n/);
+            for (let i = 0; i < lines.length; i++) {
+                if (proofDeclPattern.test(lines[i])) {
+                    const absoluteLine = block.range.startLine + i;
+
+                    // Check if any error diagnostic touches this declaration
+                    const hasError = blockDiagnostics.some(diag =>
+                        diag.severity === vscode.DiagnosticSeverity.Error &&
+                        diag.range.start.line <= absoluteLine &&
+                        diag.range.end.line >= absoluteLine
+                    );
+
+                    if (!hasError) {
+                        outputs.push({
+                            line: i,
+                            content: '✓',
+                            severity: -1  // Special marker for proof-ok
+                        });
+                    }
+                }
             }
         }
 
