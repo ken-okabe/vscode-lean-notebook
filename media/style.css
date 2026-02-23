@@ -1,356 +1,421 @@
-/* style.css */
+/* style.css — LeanNotebook VSCode Extension
+   静的 HTML ビューアと完全に同一の CSS。
+   VSCode ユーザーテーマは上書きし、Lean ブランドを優先する。
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
 
 :root {
-    --cell-padding: 8px 16px;
-    --code-bg: var(--vscode-textBlockQuote-background, #f5f5f5);
-    --markdown-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --code-font: "SF Mono", Monaco, Menlo, Consolas, "Ubuntu Mono", monospace;
+  /* Lean brand: white + blue */
+  --bg:          #f4f7fb;
+  --surface:     #ffffff;
+  --surface-alt: #eef2f8;
+  --border:      #d0daea;
+  --border-soft: #e4eaf4;
+  --text:        #1a2233;
+  --text-muted:  #4a5a78;
+  --text-dim:    #8a9ab8;
+  /* Lean blue palette */
+  --blue:        #2563eb;
+  --blue-light:  #3b82f6;
+  --blue-pale:   #dbeafe;
+  --blue-dim:    #93c5fd;
+  --blue-dark:   #1d4ed8;
+  /* syntax */
+  --hl-keyword:  #1d4ed8;
+  --hl-tactic:   #7c3aed;
+  --hl-type:     #0369a1;
+  --hl-string:   #15803d;
+  --hl-number:   #b45309;
+  --hl-comment:  #94a3b8;
+  --hl-op:       #475569;
+  /* code bg */
+  --code-bg:     #f0f4ff;
+  --radius:      7px;
+  --font-prose:  'Source Serif 4', Georgia, serif;
+  --font-code:   'Fira Code', 'Courier New', monospace;
+  --font-ui:     'Inter', system-ui, sans-serif;
+  --shadow-sm:   0 1px 3px rgba(37,99,235,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:   0 4px 12px rgba(37,99,235,.10), 0 1px 4px rgba(0,0,0,.05);
 }
 
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
 body {
-    padding: 0;
-    margin: 0;
-    background-color: var(--vscode-editor-background);
-    color: var(--vscode-editor-foreground);
-    font-family: var(--markdown-font);
-    font-size: var(--vscode-editor-font-size);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ================================================================
+   全体レイアウト: サイドバー + メインコンテンツ
+   ================================================================ */
+#layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+/* ---- サイドバー ---- */
+#sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+#toc-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0 18px 10px;
+}
+
+#toc a {
+  display: block;
+  padding: 4px 18px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color .15s, background .15s;
+  line-height: 1.5;
+  border-left: 2px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#toc a:hover {
+  color: var(--blue);
+  background: var(--blue-pale);
+  border-left-color: var(--blue-light);
+}
+#toc a.h1 {
+  font-weight: 600;
+  color: var(--text);
+  padding-left: 18px;
+  margin-top: 6px;
+}
+#toc a.h2 { padding-left: 28px; }
+#toc a.h3 { padding-left: 40px; font-size: 11.5px; }
+
+/* ---- メインコンテンツ ---- */
+#app {
+  overflow: auto;
+  min-width: 0;
 }
 
 .notebook {
-    max-width: 900px;
-    margin: 0 auto;
-    padding-bottom: 50px;
+  padding: 48px 60px;
+  max-width: 900px;
+  overflow: hidden;
 }
 
-/* Markdown Cell (legacy) */
+@media (max-width: 900px) {
+  #layout { grid-template-columns: 1fr; }
+  #sidebar { display: none; }
+  .notebook { padding: 28px 20px; }
+}
+
+/* ================================================================
+   Prose ブロック共通
+   ================================================================ */
+.module-doc-cell,
+.doc-comment-cell,
+.text-cell,
 .markdown-cell {
-    padding: var(--cell-padding);
-    margin-bottom: 4px;
-    background-color: transparent;
-    /* Seamless with editor bg */
+  font-family: var(--font-prose);
+  font-size: 17px;
+  line-height: 1.85;
+  color: var(--text);
+  margin-bottom: 10px;
 }
 
-/* Adjust headings in markdown */
-.markdown-cell h1,
-.markdown-cell h2,
-.markdown-cell h3 {
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-    border-bottom: none;
-}
-
-.markdown-cell p {
-    margin-bottom: 0.8em;
-    line-height: 1.6;
-}
-
-/* Module Documentation Cell (/-! comments) - Structural comments with headings */
+/* --- module-doc: 白カード --- */
 .module-doc-cell {
-    padding: var(--cell-padding);
-    margin-bottom: 4px;
-    background-color: transparent;
-    /* No special background */
-    /* No border or box styling */
+  padding: 32px 36px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
 }
 
-.module-doc-cell h1,
-.module-doc-cell h2,
-.module-doc-cell h3,
-.module-doc-cell h4 {
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-    border-bottom: none;
-    font-weight: 600;
-}
-
-.module-doc-cell h1:first-child,
-.module-doc-cell h2:first-child,
-.module-doc-cell h3:first-child {
-    margin-top: 0;
-}
-
-.module-doc-cell p {
-    margin-bottom: 0.8em;
-    line-height: 1.6;
-}
-
-.module-doc-cell ul,
-.module-doc-cell ol {
-    margin: 0.5em 0;
-    padding-left: 2em;
-}
-
-/* Doc Comment Cell (/-- comments) - Definition/theorem explanations */
+/* --- doc-comment: 左ブルーボーダー --- */
 .doc-comment-cell {
-    padding: 12px 16px;
-    margin: 8px 16px;
-    margin-bottom: 4px;
-    background-color: rgba(40, 167, 69, 0.06);
-    /* Light green tint */
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+  padding: 16px 20px;
+  border-left: 3px solid var(--blue-light);
+  background: var(--blue-pale);
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
-/* Reset code styles inside pre to prevent First-Line Shift caused by padding */
-.doc-comment-cell pre code,
-.module-doc-cell pre code,
-.markdown-cell pre code {
-    padding: 0;
-    background-color: transparent;
-    border-radius: 0;
-    font-size: inherit;
-    font-family: inherit;
+/* --- text-cell / markdown-cell --- */
+.text-cell,
+.markdown-cell {
+  padding: 16px 20px;
 }
 
-.doc-comment-cell h1,
-.doc-comment-cell h2,
-.doc-comment-cell h3,
-.doc-comment-cell h4 {
-    margin-top: 0.8em;
-    margin-bottom: 0.4em;
-    font-weight: 600;
+/* ================================================================
+   Prose タイポグラフィ（共通）
+   ================================================================ */
+.module-doc-cell h1, .doc-comment-cell h1, .text-cell h1, .markdown-cell h1 {
+  font-size: 1.9em; font-weight: 600; color: var(--blue-dark);
+  border-bottom: 2px solid var(--blue-pale); padding-bottom: 10px;
+  margin: 0 0 20px; line-height: 1.3;
+}
+.module-doc-cell h2, .doc-comment-cell h2, .text-cell h2, .markdown-cell h2 {
+  font-size: 1.35em; font-weight: 600; color: var(--blue);
+  margin: 24px 0 14px; line-height: 1.4;
+}
+.module-doc-cell h3, .doc-comment-cell h3, .text-cell h3, .markdown-cell h3 {
+  font-size: 1.1em; font-weight: 600; color: var(--text);
+  margin: 18px 0 10px;
+}
+.module-doc-cell h4, .doc-comment-cell h4, .text-cell h4, .markdown-cell h4 {
+  font-size: 1em; font-weight: 600; color: var(--text-muted);
+  margin: 14px 0 8px;
+}
+.module-doc-cell p, .doc-comment-cell p, .text-cell p, .markdown-cell p {
+  margin: 0 0 12px;
+}
+/* Remove bottom margin from the last child to keep padding visually equal */
+.module-doc-cell > *:last-child,
+.doc-comment-cell > *:last-child,
+.text-cell > *:last-child,
+.markdown-cell > *:last-child {
+  margin-bottom: 0;
+}
+/* Remove top margin from the first child to keep padding visually equal */
+.module-doc-cell > *:first-child,
+.doc-comment-cell > *:first-child,
+.text-cell > *:first-child,
+.markdown-cell > *:first-child {
+  margin-top: 0;
+}
+.module-doc-cell strong, .doc-comment-cell strong, .text-cell strong, .markdown-cell strong {
+  color: var(--text); font-weight: 600;
+}
+.module-doc-cell em, .doc-comment-cell em, .text-cell em, .markdown-cell em {
+  color: var(--text-muted); font-style: italic;
+}
+.module-doc-cell ul, .module-doc-cell ol,
+.doc-comment-cell ul, .doc-comment-cell ol,
+.text-cell ul, .text-cell ol,
+.markdown-cell ul, .markdown-cell ol {
+  margin: 8px 0 14px 22px;
+}
+.module-doc-cell li, .doc-comment-cell li, .text-cell li, .markdown-cell li {
+  margin-bottom: 5px;
+}
+.module-doc-cell li p, .doc-comment-cell li p, .text-cell li p, .markdown-cell li p {
+  margin: 0;
 }
 
-.doc-comment-cell h1:first-child,
-.doc-comment-cell h2:first-child,
-.doc-comment-cell h3:first-child {
-    margin-top: 0;
+/* インラインコード */
+.module-doc-cell code, .doc-comment-cell code, .text-cell code, .markdown-cell code {
+  font-family: var(--font-code);
+  font-size: .84em;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--blue-dark);
 }
 
-.doc-comment-cell p {
-    margin-bottom: 0.8em;
-    line-height: 1.6;
+/* コードフェンス */
+.module-doc-cell pre, .doc-comment-cell pre, .text-cell pre, .markdown-cell pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+.module-doc-cell pre code, .doc-comment-cell pre code,
+.text-cell pre code, .markdown-cell pre code {
+  background: none; border: none; padding: 0;
+  color: var(--text); font-size: inherit;
 }
 
-.doc-comment-cell ul,
-.doc-comment-cell ol {
-    margin: 0.5em 0;
-    padding-left: 2em;
+/* テーブル */
+.module-doc-cell table, .doc-comment-cell table, .text-cell table, .markdown-cell table {
+  border-collapse: collapse; width: 100%; margin: 16px 0;
+  font-family: var(--font-ui); font-size: 14px;
+}
+.module-doc-cell th, .doc-comment-cell th, .text-cell th, .markdown-cell th {
+  background: var(--surface-alt); color: var(--blue-dark);
+  font-weight: 600; padding: 8px 14px; text-align: left;
+  border: 1px solid var(--border);
+}
+.module-doc-cell td, .doc-comment-cell td, .text-cell td, .markdown-cell td {
+  padding: 7px 14px; border: 1px solid var(--border); color: var(--text);
+}
+.module-doc-cell tr:nth-child(even) td,
+.doc-comment-cell tr:nth-child(even) td,
+.text-cell tr:nth-child(even) td,
+.markdown-cell tr:nth-child(even) td {
+  background: #f0f5fd;
 }
 
-.doc-comment-cell code {
-    background-color: var(--vscode-textCodeBlock-background);
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-    font-family: var(--code-font);
-    font-size: 0.9em;
+/* ブロッククォート */
+.module-doc-cell blockquote, .doc-comment-cell blockquote,
+.text-cell blockquote, .markdown-cell blockquote {
+  border-left: 3px solid var(--blue-dim); padding-left: 16px;
+  margin: 12px 0; color: var(--text-muted); font-style: italic;
+}
+.module-doc-cell hr, .doc-comment-cell hr, .text-cell hr, .markdown-cell hr {
+  border: none; border-top: 1px solid var(--border); margin: 24px 0;
+}
+.module-doc-cell a, .doc-comment-cell a, .text-cell a, .markdown-cell a {
+  color: var(--blue); text-decoration: none;
+}
+.module-doc-cell a:hover, .doc-comment-cell a:hover,
+.text-cell a:hover, .markdown-cell a:hover {
+  text-decoration: underline;
 }
 
-/* Code Cell */
+/* ================================================================
+   コードブロック
+   ================================================================ */
 .code-cell {
-    margin: 8px 16px;
-    border: 1px solid var(--vscode-widget-border, #ccc);
-    border-radius: 4px;
-    overflow: hidden;
-    background-color: var(--code-bg);
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
-/* Embedded Snippets (in Doc Comments) */
-.doc-comment-cell pre,
-.module-doc-cell pre,
-.markdown-cell pre {
-    /* Stronger distinction for Light Mode */
-    background-color: #f6f8fa;
-    /* GitHub light code block */
-    border: 1px solid #d0d7de;
-    border-left: 4px solid #007acc;
-    /* Blue accent to signal "reference" */
-    border-radius: 4px;
-    padding: 12px;
-    margin: 12px 0;
-    overflow-x: auto;
-    tab-size: 4;
+.block-code-header {
+  background: var(--surface-alt);
+  padding: 7px 16px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-
-body.vscode-dark .doc-comment-cell pre,
-body.vscode-dark .module-doc-cell pre,
-body.vscode-dark .markdown-cell pre {
-    /* Stronger distinction for Dark Mode */
-    background-color: #161b22;
-    /* GitHub dark code block */
-    border: 1px solid #30363d;
-    border-left: 4px solid #4ec9b0;
-    /* Teal accent matches our eval result color */
+.block-code-header::before {
+  content: '';
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--blue-light);
+  opacity: .7;
 }
 
 .lean-source {
-    margin: 0;
-    padding: 12px;
-    font-family: var(--code-font);
-    font-size: 0.95em;
-    white-space: pre-wrap;
-    color: var(--vscode-editor-foreground);
+  background: var(--code-bg);
+  margin: 0;
+  padding: 18px 20px;
+  font-family: var(--font-code);
+  font-size: 13.5px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+  color: var(--text);
 }
 
-/* Output Section */
-.lean-output {
-    border-top: 1px solid var(--vscode-widget-border, #ccc);
-    padding: 12px;
-    background-color: rgba(0, 0, 0, 0.02);
-    /* Slight darken */
-    position: relative;
-    padding-left: 24px;
-    /* Space for the blue bar */
-}
+/* ================================================================
+   シンタックスハイライト
+   ================================================================ */
+.hl-keyword { color: var(--hl-keyword); font-weight: 600; }
+.hl-tactic  { color: var(--hl-tactic); }
+.hl-type    { color: var(--hl-type); }
+.hl-string  { color: var(--hl-string); }
+.hl-number  { color: var(--hl-number); }
+.hl-comment { color: var(--hl-comment); font-style: italic; }
+.hl-op      { color: var(--hl-op); }
 
-.lean-output::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    background-color: var(--vscode-textLink-activeForeground, #007acc);
-}
-
-.output-label {
-    display: block;
-    font-size: 0.8em;
-    color: var(--vscode-descriptionForeground);
-    font-weight: bold;
-    margin-bottom: 4px;
-    text-transform: uppercase;
-}
-
-.lean-output pre {
-    margin: 0;
-    font-family: var(--code-font);
-    white-space: pre-wrap;
-}
-
-/* MathJax tweaks for VS Code dark mode visibility if needed */
-.MathJax {
-    font-size: 1.1em;
-}
-
-/* Text Cell (Markdown file text) */
-.text-cell {
-    margin: 8px 16px;
-    padding: 12px 16px;
-    background-color: var(--vscode-editor-background);
-    border-radius: 4px;
-    line-height: 1.6;
-}
-
-.text-cell h1,
-.text-cell h2,
-.text-cell h3,
-.text-cell h4,
-.text-cell h5,
-.text-cell h6 {
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-    font-weight: 600;
-}
-
-.text-cell p {
-    margin: 0.5em 0;
-}
-
-.text-cell ul,
-.text-cell ol {
-    margin: 0.5em 0;
-    padding-left: 2em;
-}
-
-.text-cell code {
-    background-color: var(--vscode-textCodeBlock-background);
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-    font-family: var(--code-font);
-    font-size: 0.9em;
-}
-
-.text-cell pre {
-    background-color: var(--vscode-textCodeBlock-background);
-    padding: 1em;
-    border-radius: 4px;
-    overflow-x: auto;
-}
-
-.text-cell blockquote {
-    border-left: 4px solid var(--vscode-textBlockQuote-border);
-    padding-left: 1em;
-    margin-left: 0;
-    color: var(--vscode-textBlockQuote-foreground);
-}
-
-.text-cell a {
-    color: var(--vscode-textLink-foreground);
-    text-decoration: none;
-}
-
-.text-cell a:hover {
-    text-decoration: underline;
-}
-
-/* Mermaid Cell */
+/* ================================================================
+   Mermaid ブロック
+   ================================================================ */
 .mermaid-cell {
-    margin: 8px 16px;
-    padding: 12px 16px;
-    background-color: var(--vscode-editor-background);
-    border-radius: 4px;
-    text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
 }
-
-.mermaid-cell svg {
-    max-width: 100%;
-    height: auto;
-}
-
+.mermaid-cell svg { max-width: 100%; height: auto; }
 .mermaid-cell .error {
-    color: var(--vscode-errorForeground);
-    background-color: var(--vscode-inputValidation-errorBackground);
-    padding: 1em;
-    border-radius: 4px;
-    text-align: left;
+  color: #c00;
+  padding: 1em; border-radius: 4px; text-align: left;
 }
 
-/* Eval Result Styling (Prism token) */
-.token.eval-result {
-    color: #569cd6 !important;
-    /* VS Code Blue */
-    font-weight: bold;
+/* ================================================================
+   MathJax
+   ================================================================ */
+mjx-container { color: inherit !important; }
+
+mjx-container[display="true"] {
+  display: block !important;
+  overflow: visible !important;
+  margin: 0 !important;
+  max-width: 100%;
+}
+.mjx-display-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 20px 0;
+  padding: 4px 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--blue-dim) transparent;
+}
+.mjx-display-wrap::-webkit-scrollbar { height: 4px; }
+.mjx-display-wrap::-webkit-scrollbar-track { background: transparent; }
+.mjx-display-wrap::-webkit-scrollbar-thumb {
+  background: var(--blue-dim); border-radius: 2px;
 }
 
-/* For Light Theme override if needed */
-body.vscode-light .token.eval-result {
-    color: #0000ff !important;
-    /* Blue for light mode */
-}
+/* 見出しのスクロールオフセット */
+h1, h2, h3, h4, h5, h6 { scroll-margin-top: 24px; }
 
-/* Proof Status Styling (Prism token) */
-.token.proof-ok {
-    color: #4ec9b0 !important;
-    /* VS Code Teal/Green — matches official Lean checkmark */
-    font-weight: bold;
-}
+/* ================================================================
+   スクロールバー
+   ================================================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--blue-dim); border-radius: 3px; }
 
-/* For Light Theme override */
-body.vscode-light .token.proof-ok {
-    color: #008000 !important;
-    /* Dark green for light mode */
+/* ================================================================
+   Lean LSP 出力（#eval / proof status）
+   ================================================================ */
+.lean-output {
+  border-top: 1px solid var(--border);
+  padding: 10px 10px 10px 22px;
+  background: rgba(0,0,0,.02);
+  position: relative;
 }
-
-/* Table Styling */
-table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-bottom: 1em;
+.lean-output::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--blue);
 }
-
-th,
-td {
-    border: 1px solid var(--vscode-widget-border, #ccc);
-    padding: 6px 13px;
-    text-align: left;
+.output-label {
+  display: block; font-size: .78em;
+  color: var(--text-muted); font-weight: 600;
+  margin-bottom: 4px; text-transform: uppercase;
 }
-
-tr:nth-child(2n) {
-    background-color: var(--vscode-textCodeBlock-background);
-}
-
-th {
-    font-weight: bold;
-    background-color: var(--vscode-textCodeBlock-background);
+.lean-output pre {
+  margin: 0; font-family: var(--font-code);
+  white-space: pre-wrap; font-size: 13px;
 }

@@ -276,7 +276,13 @@ export class NotebookPanel {
             <title>Notebook Preview</title>
         </head>
         <body>
-            <div id="app"></div>
+            <div id="layout">
+                <nav id="sidebar">
+                    <div id="toc-label">Contents</div>
+                    <div id="toc"></div>
+                </nav>
+                <main id="app"></main>
+            </div>
             <script>
                 console.log("[Webview] HTML loaded.");
                 

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { NotebookPanel } from './panels/NotebookPanel';
 import { leanLspManager } from './leanLspClient';
+import { runHtmlExport } from './htmlExporter';
 
 export function activate(context: vscode.ExtensionContext) {
     // Store scroll positions for each document (line number for source)
@@ -12,9 +13,16 @@ export function activate(context: vscode.ExtensionContext) {
     // Track the URI of the document currently being shown in preview
     let currentPreviewDocUri: string | undefined = undefined;
 
-    // Create Status Bar Item
+    // Create Status Bar Items
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     context.subscriptions.push(statusBarItem);
+
+    // HTML Export status bar button
+    const exportStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    exportStatusBarItem.text = '$(export) HTML Export';
+    exportStatusBarItem.tooltip = 'LeanNotebook: Export as HTML file(s)';
+    exportStatusBarItem.command = 'leannotebook.htmlExport';
+    context.subscriptions.push(exportStatusBarItem);
 
     // Function to check if a document is Lean or Markdown
     const isLeanOrMarkdown = (doc: vscode.TextDocument | undefined): boolean => {
@@ -35,15 +43,18 @@ export function activate(context: vscode.ExtensionContext) {
             statusBarItem.tooltip = 'Switch to Preview';
             statusBarItem.command = 'leannotebook.openPreview';
             statusBarItem.show();
+            exportStatusBarItem.show();
         } else if (!editor && NotebookPanel.currentPanel) {
             // No active editor but we have a preview - show "Open Source" button
             statusBarItem.text = '$(code) Open Source';
             statusBarItem.tooltip = 'Switch to Source';
             statusBarItem.command = 'leannotebook.showSource';
             statusBarItem.show();
+            exportStatusBarItem.show();
         } else {
             // Not a Lean/Markdown file
             statusBarItem.hide();
+            exportStatusBarItem.hide();
         }
     };
 
@@ -119,7 +130,14 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    context.subscriptions.push(toggleCommand, showSourceCommand);
+    // HTML Export command
+    const htmlExportCommand = vscode.commands.registerCommand('leannotebook.htmlExport', () => {
+        const doc = NotebookPanel.currentPanel?._document 
+            ?? vscode.window.activeTextEditor?.document;
+        runHtmlExport(context.extensionUri, doc);
+    });
+
+    context.subscriptions.push(toggleCommand, showSourceCommand, htmlExportCommand);
 
     // Listen for diagnostic changes (e.g. #eval results arriving)
     vscode.languages.onDidChangeDiagnostics(e => {

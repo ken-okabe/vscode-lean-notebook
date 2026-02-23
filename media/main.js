@@ -4,37 +4,124 @@ import van from './van.min.js';
 // --- VanJS Tags ---
 const { div, span, pre, code, button, a } = van.tags;
 
-// Register Lean language definition for Prism.js
-if (window.Prism && !Prism.languages.lean) {
-    Prism.languages.lean = {
-        'proof-ok': {
-            pattern: /--\s*✓.*$/m,
-            alias: 'comment'
-        },
-        'eval-result': {
-            pattern: /--\s*Evaluated:.*$/m,
-            alias: 'comment'
-        },
-        'comment': [
-            {
-                pattern: /--.*$/m,
-                greedy: true
-            },
-            {
-                pattern: /\/-[\s\S]*?-\//,
-                greedy: true
+// ================================================================
+// 独自 Lean 4 シンタックスハイライタ（静的 HTML ビューアから移植）
+// Prism に依存せず、Lean 4 専用トークンを高精度で分類する。
+// ================================================================
+const _KW = new Set([
+    'def','abbrev','theorem','lemma','example','noncomputable',
+    'private','protected','instance','class','structure','inductive','where','with',
+    'extends','deriving','namespace','end','section','open','import','export',
+    'universe','variable','attribute','notation','macro','syntax','elab',
+    'by','do','return','let','have','show','from','fun','match','if','then','else',
+    'for','while','mut','pure','calc','suffices','obtain','refine','exact','apply',
+    'intro','intros','cases','induction','constructor','use','rfl','simp','ring',
+    'omega','linarith','norm_num','decide','native_decide','trivial','assumption',
+    'contradiction','aesop','tauto','field_simp','push_neg','pull_neg',
+    'partial','unsafe','opaque','axiom'
+]);
+const _TY = new Set([
+    'Nat','Int','Bool','String','Float','Char','UInt8','UInt16',
+    'UInt32','UInt64','Int8','Int16','Int32','Int64','List','Array','Vector',
+    'Option','Result','IO','Type','Prop','Sort','Unit','Empty','True','False',
+    'Eq','And','Or','Not','Iff','Exists','Sigma','Subtype','Fin','BitVec'
+]);
+const _TA = new Set([
+    'native_decide','decide','rfl','simp','ring','omega',
+    'linarith','norm_num','exact','apply','intro','intros','cases','rcases',
+    'induction','constructor','use','refine','suffices','obtain','contradiction',
+    'trivial','assumption','aesop','tauto','field_simp','push_neg','pull_neg',
+    'positivity','norm_cast','push_cast','ext','funext','congr','conv','rw',
+    'rewrite','gcongr','abel'
+]);
+
+function _esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function _hlLine(raw) {
+    // -- コメント位置を探す（文字列の外側のみ）
+    let cmt = -1, inStr = false;
+    for (let i = 0; i < raw.length - 1; i++) {
+        if (raw[i] === '"' && (i === 0 || raw[i - 1] !== '\\')) inStr = !inStr;
+        if (!inStr && raw[i] === '-' && raw[i + 1] === '-') { cmt = i; break; }
+    }
+    const codePart = cmt >= 0 ? raw.slice(0, cmt) : raw;
+    const tailPart = cmt >= 0 ? raw.slice(cmt) : '';
+
+    let out = '', i = 0;
+    while (i < codePart.length) {
+        const ch = codePart[i];
+
+        // 文字列リテラル
+        if (ch === '"') {
+            let j = i + 1;
+            while (j < codePart.length && (codePart[j] !== '"' || codePart[j - 1] === '\\')) j++;
+            out += `<span class="hl-string">${_esc(codePart.slice(i, j + 1))}</span>`;
+            i = j + 1; continue;
+        }
+
+        // 数値リテラル（0b / 0x プレフィックス含む）
+        if (ch === '0' && i + 1 < codePart.length && (codePart[i + 1] === 'b' || codePart[i + 1] === 'x')) {
+            let j = i + 2;
+            while (j < codePart.length && /[0-9a-fA-F_]/.test(codePart[j])) j++;
+            let sf = '';
+            if (j < codePart.length && codePart[j] === '#') {
+                let k = j + 1;
+                while (k < codePart.length && /\d/.test(codePart[k])) k++;
+                sf = _esc(codePart.slice(j, k)); j = k;
             }
-        ],
-        'string': {
-            pattern: /"(?:[^"\\]|\\.)*"/,
-            greedy: true
-        },
-        'keyword': /\b(?:def|theorem|lemma|example|axiom|inductive|structure|class|instance|section|namespace|variable|universe|import|export|open|private|protected|where|let|have|show|by|from|fun|match|with|if|then|else|do|return|for|in|mut|partial|unsafe|deriving|extends|abbrev|opaque|noncomputable)\b/,
-        'builtin': /\b(?:Type|Prop|Sort|Nat|Int|String|Bool|List|Array|Option|true|false)\b/,
-        'number': /\b\d+\b/,
-        'operator': /[:=]|[+\-*/<>]=?|[∀∃∧∨¬≠≤≥→←↔|⟨⟩]/,
-        'punctuation': /[{}()\[\],.:]/,
-    };
+            out += `<span class="hl-number">${_esc(codePart.slice(i, j))}${sf}</span>`;
+            i = j; continue;
+        }
+        if (/\d/.test(ch) && (i === 0 || !/\w/.test(codePart[i - 1]))) {
+            let j = i;
+            while (j < codePart.length && /[\d_]/.test(codePart[j])) j++;
+            out += `<span class="hl-number">${_esc(codePart.slice(i, j))}</span>`;
+            i = j; continue;
+        }
+
+        // 識別子・キーワード
+        if (/[a-zA-Z_]/.test(ch) || ch.charCodeAt(0) > 127) {
+            let j = i + 1;
+            while (j < codePart.length && (
+                /[\w']/.test(codePart[j]) ||
+                /[₀-₉]/.test(codePart[j]) ||
+                codePart.charCodeAt(j) > 127
+            )) j++;
+            const w = codePart.slice(i, j);
+            const e = _esc(w);
+            if      (_KW.has(w)) out += `<span class="hl-keyword">${e}</span>`;
+            else if (_TA.has(w)) out += `<span class="hl-tactic">${e}</span>`;
+            else if (_TY.has(w)) out += `<span class="hl-type">${e}</span>`;
+            else if (/^[A-Z]/.test(w)) out += `<span class="hl-type">${e}</span>`;
+            else out += e;
+            i = j; continue;
+        }
+
+        // 演算子
+        let hit = false;
+        for (const op of ['^^^','&&&','|||','<<<','>>>','<|>',':=','=>','->','<-','::','..']) {
+            if (codePart.startsWith(op, i)) {
+                out += `<span class="hl-op">${_esc(op)}</span>`;
+                i += op.length; hit = true; break;
+            }
+        }
+        if (hit) continue;
+
+        out += _esc(ch); i++;
+    }
+
+    if (tailPart) out += `<span class="hl-comment">${_esc(tailPart)}</span>`;
+    return out;
+}
+
+/**
+ * Lean 4 ソースコード全体をシンタックスハイライトし、
+ * innerHTML にセット可能な HTML 文字列を返す。
+ */
+function hlLean(codeText) {
+    return codeText.split('\n').map(_hlLine).join('\n');
 }
 
 try {
@@ -203,23 +290,39 @@ try {
             dom.textContent = "Error parsing Markdown";
         }
 
-        // Effects (MathJax, Prism)
-        // We use requestAnimationFrame to batch? Or just macro-task.
+        // Effects (hl, MathJax)
         setTimeout(async () => {
             if (signal.aborted) return;
 
-            // Prism
-            if (window.Prism) {
-                dom.querySelectorAll('pre code').forEach(el => {
-                    if (signal.aborted) return;
+            // タスク5: Markdown 内の ```lean コードフェンスを hlLean() でハイライト
+            dom.querySelectorAll('pre code').forEach(el => {
+                if (signal.aborted) return;
+                const isLean = el.classList.contains('language-lean') ||
+                               el.classList.contains('language-lean4');
+                if (isLean) {
+                    // hlLean は HTML エスケープ済み文字列を返す → innerHTML に直接セット
+                    el.innerHTML = hlLean(el.textContent || '');
+                } else if (window.Prism) {
+                    // lean 以外は Prism にフォールバック
                     Prism.highlightElement(el);
-                });
-            }
+                }
+            });
 
             // MathJax
             if (window.MathJax && MathJax.typesetPromise) {
                 try {
                     await MathJax.typesetPromise([dom]);
+                    if (signal.aborted) return;
+                    // タスク2: display math の縦スクロールバー防止
+                    // mjx-container[display="true"] を .mjx-display-wrap で包む
+                    dom.querySelectorAll('mjx-container[display="true"]').forEach(el => {
+                        if (!el.parentElement.classList.contains('mjx-display-wrap')) {
+                            const wrap = document.createElement('div');
+                            wrap.className = 'mjx-display-wrap';
+                            el.parentNode.insertBefore(wrap, el);
+                            wrap.appendChild(el);
+                        }
+                    });
                 } catch (e) {
                     // ignore
                 }
@@ -262,14 +365,12 @@ try {
 
         const displaySource = resultLines.join('\n');
 
-        const codeEl = code({ class: "language-lean" }, displaySource);
-        const preEl = pre({ class: "lean-source" }, codeEl);
-        const dom = div({ class: "code-cell" }, preEl);
-
-        setTimeout(() => {
-            if (signal.aborted) return;
-            if (window.Prism) Prism.highlightElement(codeEl);
-        }, 0);
+        // タスク3: ヘッダーバー追加
+        const header = div({ class: "block-code-header" }, "lean4");
+        // タスク5: 独自 hlLean() でハイライト（Prism 不使用）
+        const preEl = pre({ class: "lean-source" });
+        preEl.innerHTML = hlLean(displaySource);
+        const dom = div({ class: "code-cell" }, header, preEl);
 
         return dom;
     };
@@ -335,6 +436,48 @@ try {
     }
 
     document.getElementById('app').replaceChildren(App());
+
+    // ================================================================
+    // タスク4: TOC（目次）自動生成
+    // ノートブック内の h1/h2/h3 を走査してサイドバーにリンクを追加する。
+    // DOM が更新されるたびに再生成する（MutationObserver）。
+    // ================================================================
+    function buildToc() {
+        const toc = document.getElementById('toc');
+        if (!toc) return;
+
+        const notebook = document.getElementById('app');
+        if (!notebook) return;
+
+        const headings = notebook.querySelectorAll('h1, h2, h3');
+        if (headings.length === 0) return;
+
+        let tocHtml = '';
+        let headingIdx = 0;
+        headings.forEach(h => {
+            // ID が未設定なら付与する
+            if (!h.id) {
+                h.id = 'toc-h-' + headingIdx++;
+            }
+            const tag = h.tagName.toLowerCase(); // h1 / h2 / h3
+            const cls = tag;                     // .h1 / .h2 / .h3
+            const label = h.textContent || '';
+            tocHtml += `<a href="#${h.id}" class="${cls}" title="${label}">${label}</a>\n`;
+        });
+
+        toc.innerHTML = tocHtml;
+    }
+
+    // DOM 変化を監視して TOC を再構築
+    const tocObserver = new MutationObserver(() => {
+        // debounce: 連続更新時に 1 回だけ実行
+        clearTimeout(tocObserver._timer);
+        tocObserver._timer = setTimeout(buildToc, 200);
+    });
+    const appEl = document.getElementById('app');
+    if (appEl) {
+        tocObserver.observe(appEl, { childList: true, subtree: true });
+    }
 
 } catch (err) {
     const app = document.getElementById('app');

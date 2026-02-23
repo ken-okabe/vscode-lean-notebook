@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lean Notebook Viewer</title>
+<script>
+MathJax = {
+  tex: {
+    inlineMath: [['$','$'],['\(','\)']],
+    displayMath: [['$$','$$'],['\[','\]']],
+    displayAlign: 'center',
+    displayIndent: '0'
+  },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre'] },
+  startup: { typeset: false }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+:root {
+  --bg:          #f4f7fb;
+  --surface:     #ffffff;
+  --surface-alt: #eef2f8;
+  --border:      #d0daea;
+  --border-soft: #e4eaf4;
+  --text:        #1a2233;
+  --text-muted:  #4a5a78;
+  --text-dim:    #8a9ab8;
+  --blue:        #2563eb;
+  --blue-light:  #3b82f6;
+  --blue-pale:   #dbeafe;
+  --blue-dim:    #93c5fd;
+  --blue-dark:   #1d4ed8;
+  --hl-keyword:  #1d4ed8;
+  --hl-tactic:   #7c3aed;
+  --hl-type:     #0369a1;
+  --hl-string:   #15803d;
+  --hl-number:   #b45309;
+  --hl-comment:  #94a3b8;
+  --hl-op:       #475569;
+  --code-bg:     #f0f4ff;
+  --radius:      7px;
+  --font-prose:  'Source Serif 4', Georgia, serif;
+  --font-code:   'Fira Code', 'Courier New', monospace;
+  --font-ui:     'Inter', system-ui, sans-serif;
+  --shadow-sm:   0 1px 3px rgba(37,99,235,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:   0 4px 12px rgba(37,99,235,.10), 0 1px 4px rgba(0,0,0,.05);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:16px;line-height:1.6;min-height:100vh}
+#app{display:grid;grid-template-columns:260px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
+#topbar{
+  grid-column:1/-1;background:var(--surface);
+  border-bottom:1px solid var(--border);
+  padding:0 28px;height:56px;
+  display:flex;align-items:center;gap:14px;
+  position:sticky;top:0;z-index:100;
+  box-shadow:var(--shadow-sm);
+}
+#topbar .logo{font-family:var(--font-code);font-size:14px;color:var(--blue);font-weight:600;letter-spacing:.02em;white-space:nowrap;}
+#topbar .logo span{color:var(--text-dim);font-weight:400}
+#topbar .doc-title{font-size:14px;font-weight:400;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#topbar .sep{color:var(--border)}
+#view-toggle{margin-left:auto;display:flex;align-items:center;background:var(--surface-alt);border:1px solid var(--border);border-radius:99px;padding:3px;gap:2px;}
+#view-toggle label{font-family:var(--font-code);font-size:11px;font-weight:500;padding:3px 12px;border-radius:99px;cursor:pointer;color:var(--text-muted);transition:background .15s,color .15s;user-select:none;white-space:nowrap;}
+#view-toggle input[type=radio]{display:none}
+#view-toggle input[type=radio]:checked + label{background:var(--blue);color:#fff;box-shadow:0 1px 3px rgba(37,99,235,.25);}
+#lean-raw{display:none;padding:48px 60px;max-width:none;grid-column:2;overflow:auto}
+@media(max-width:900px){#lean-raw{grid-column:1;padding:28px 20px}}
+#app.lean-mode{grid-template-columns:0 1fr}
+#app.lean-mode #sidebar{display:none}
+#app.lean-mode #lean-raw{grid-column:1/-1;padding:48px 60px}
+@media(max-width:900px){#app.lean-mode #lean-raw{padding:28px 20px}}
+#lean-raw pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);padding:24px;font-family:var(--font-code);font-size:13px;line-height:1.7;tab-size:2;overflow-x:auto;box-shadow:var(--shadow-sm);white-space:pre;}
+#sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:20px 0;position:sticky;top:56px;height:calc(100vh - 56px);}
+#toc-label{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);padding:0 18px 10px;}
+#toc a{display:block;padding:4px 18px;font-size:12.5px;color:var(--text-muted);text-decoration:none;transition:color .15s,background .15s;line-height:1.5;border-left:2px solid transparent;}
+#toc a:hover{color:var(--blue);background:var(--blue-pale);border-left-color:var(--blue-light)}
+#toc a.h1{font-weight:600;color:var(--text);padding-left:18px;margin-top:6px}
+#toc a.h2{padding-left:28px}
+#toc a.h3{padding-left:40px;font-size:11.5px}
+#notebook{padding:48px 60px;max-width:900px;overflow:hidden}
+.block-module-doc,.block-doc-comment{font-family:var(--font-prose);font-size:17px;line-height:1.85;color:var(--text);margin-bottom:10px;}
+.block-module-doc{padding:32px 36px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius);box-shadow:var(--shadow-sm);}
+.block-doc-comment{padding:16px 20px;border-left:3px solid var(--blue-light);background:var(--blue-pale);border-radius:0 var(--radius) var(--radius) 0;}
+.block-code{margin-bottom:10px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow-sm)}
+.block-code-header{background:var(--surface-alt);padding:7px 16px;font-family:var(--font-code);font-size:11px;color:var(--text-dim);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+.block-code-header::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--blue-light);opacity:.7;}
+.block-code pre{background:var(--code-bg);margin:0;padding:18px 20px;overflow-x:auto;font-family:var(--font-code);font-size:13.5px;line-height:1.7;tab-size:2;}
+.block-mermaid{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;margin-bottom:10px;display:flex;justify-content:center;box-shadow:var(--shadow-sm);}
+.block-mermaid svg{max-width:100%;height:auto}
+.block-module-doc h1,.block-doc-comment h1{font-size:1.9em;font-weight:600;color:var(--blue-dark);border-bottom:2px solid var(--blue-pale);padding-bottom:10px;margin:0 0 20px;line-height:1.3;}
+.block-module-doc h2,.block-doc-comment h2{font-size:1.35em;font-weight:600;color:var(--blue);margin:24px 0 14px;line-height:1.4;}
+.block-module-doc h3,.block-doc-comment h3{font-size:1.1em;font-weight:600;color:var(--text);margin:18px 0 10px}
+.block-module-doc h4,.block-doc-comment h4{font-size:1em;font-weight:600;color:var(--text-muted);margin:14px 0 8px}
+.block-module-doc p,.block-doc-comment p{margin:0 0 12px}
+.block-module-doc>*:last-child,.block-doc-comment>*:last-child{margin-bottom:0}
+.block-module-doc>*:first-child,.block-doc-comment>*:first-child{margin-top:0}
+.block-module-doc strong,.block-doc-comment strong{color:var(--text);font-weight:600}
+.block-module-doc em,.block-doc-comment em{color:var(--text-muted);font-style:italic}
+.block-module-doc ul,.block-module-doc ol,.block-doc-comment ul,.block-doc-comment ol{margin:8px 0 14px 22px}
+.block-module-doc li,.block-doc-comment li{margin-bottom:5px}
+.block-module-doc li p,.block-doc-comment li p{margin:0}
+.block-module-doc code,.block-doc-comment code{font-family:var(--font-code);font-size:.84em;background:var(--surface-alt);border:1px solid var(--border);border-radius:3px;padding:1px 5px;color:var(--blue-dark);}
+.block-module-doc pre,.block-doc-comment pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;margin:12px 0;}
+.block-module-doc pre code,.block-doc-comment pre code{background:none;border:none;padding:0;color:var(--text);font-size:13px}
+.block-module-doc table,.block-doc-comment table{border-collapse:collapse;width:100%;margin:16px 0;font-family:var(--font-ui);font-size:14px}
+.block-module-doc th,.block-doc-comment th{background:var(--surface-alt);color:var(--blue-dark);font-weight:600;padding:8px 14px;text-align:left;border:1px solid var(--border);}
+.block-module-doc td,.block-doc-comment td{padding:7px 14px;border:1px solid var(--border);color:var(--text)}
+.block-module-doc tr:nth-child(even) td,.block-doc-comment tr:nth-child(even) td{background:#f0f5fd}
+.block-module-doc blockquote,.block-doc-comment blockquote{border-left:3px solid var(--blue-dim);padding-left:16px;margin:12px 0;color:var(--text-muted);font-style:italic;}
+.block-module-doc hr,.block-doc-comment hr{border:none;border-top:1px solid var(--border);margin:24px 0}
+.hl-keyword{color:var(--hl-keyword);font-weight:600}
+.hl-tactic{color:var(--hl-tactic)}
+.hl-type{color:var(--hl-type)}
+.hl-string{color:var(--hl-string)}
+.hl-number{color:var(--hl-number)}
+.hl-comment{color:var(--hl-comment);font-style:italic}
+.hl-op{color:var(--hl-op)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--blue-dim);border-radius:3px}
+mjx-container{color:inherit!important}
+h1,h2,h3,h4,h5,h6{scroll-margin-top:72px}
+mjx-container[display="true"]{display:block!important;overflow:visible!important;margin:0!important;max-width:100%;}
+.mjx-display-wrap{overflow-x:auto;overflow-y:hidden;margin:20px 0;padding:4px 0;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--blue-dim) transparent;}
+.mjx-display-wrap::-webkit-scrollbar{height:4px}
+.mjx-display-wrap::-webkit-scrollbar-track{background:transparent}
+.mjx-display-wrap::-webkit-scrollbar-thumb{background:var(--blue-dim);border-radius:2px}
+@media(max-width:900px){#app{grid-template-columns:1fr}#sidebar{display:none}#notebook{padding:28px 20px}}
+</style>
+</head>
+<body>
+<script type="text/x-lean-source" id="lean-source">%%LEAN_SOURCE%%</script>
+
+<div id="app">
+  <div id="topbar">
+    <div class="logo">lean<span> notebook</span></div>
+    <div class="sep">·</div>
+    <div class="doc-title" id="doc-title">Loading…</div>
+    <div id="view-toggle">
+      <input type="radio" name="view" id="vlean" value="lean">
+      <label for="vlean">lean</label>
+      <input type="radio" name="view" id="vhtml" value="html" checked>
+      <label for="vhtml">HTML</label>
+    </div>
+  </div>
+  <nav id="sidebar">
+    <div id="toc-label">Contents</div>
+    <div id="toc"></div>
+  </nav>
+  <main id="notebook"></main>
+  <div id="lean-raw"><pre id="lean-raw-pre"></pre></div>
+</div>
+
+<script>
+/* ================================================================
+   leanCommentParser の JS 移植
+   ================================================================ */
+function trimEmptyLines(code) {
+  const lines = code.split('\n');
+  let s = 0;
+  while (s < lines.length && lines[s].trim() === '') s++;
+  let e = lines.length - 1;
+  while (e >= 0 && lines[e].trim() === '') e--;
+  if (s > e) return '';
+  return lines.slice(s, e + 1).join('\n');
+}
+
+function dedent(str) {
+  const lines = str.split('\n');
+  let minIndent = Infinity;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length === 0) continue;
+    const m = line.match(/^\s*/);
+    const indent = m ? m[0].length : 0;
+    if (indent < minIndent) minIndent = indent;
+  }
+  if (minIndent === Infinity) minIndent = 0;
+  const dedentedLines = lines.map((line, index) => {
+    if (index === 0) return line.trim();
+    if (line.trim().length === 0) return '';
+    return line.length >= minIndent ? line.slice(minIndent) : line.trim();
+  });
+  return dedentedLines.join('\n').trim();
+}
+
+function findDocCommentEnd(text, startPos) {
+  let pos = startPos;
+  let inlineTickCount = null;
+  let inFence = false;
+  while (pos < text.length) {
+    const ch = text[pos];
+    if (ch === '`') {
+      let run = 1;
+      while (pos + run < text.length && text[pos + run] === '`') run++;
+      if (inlineTickCount === null) {
+        if (run >= 3) {
+          let i = pos - 1;
+          while (i >= 0 && text[i] !== '\n') i--;
+          const prefix = text.slice(i + 1, pos);
+          const isLineStartish = /^\s*$/.test(prefix);
+          if (isLineStartish) { inFence = !inFence; pos += run; continue; }
+        }
+        if (!inFence) { inlineTickCount = run; pos += run; continue; }
+      } else {
+        if (run === inlineTickCount) { inlineTickCount = null; pos += run; continue; }
+      }
+      pos += run; continue;
+    }
+    const next = (pos + 1 < text.length) ? text[pos + 1] : '';
+    if (!inFence && inlineTickCount === null && ch === '-' && next === '/') return pos;
+    pos += 1;
+  }
+  return -1;
+}
+
+function splitLeanDocComments(text) {
+  const blocks = [];
+  let pos = 0, last = 0;
+  function pushCode(code) {
+    const lines = code.split('\n');
+    let s = 0;
+    while (s < lines.length && lines[s].trim() === '') s++;
+    const rawStartLine = text.slice(0, last).split('\n').length - 1;
+    const startLine = rawStartLine + s;
+    const trimmedCode = trimEmptyLines(code);
+    const trimmedLineCount = trimmedCode.split('\n').length;
+    const endLine = startLine + (trimmedLineCount > 0 ? trimmedLineCount - 1 : 0);
+    blocks.push({ type: 'code', source: trimmedCode, range: { startLine, endLine } });
+  }
+  function pushComment(kind, content, startOffset, endOffset) {
+    const dedentedContent = dedent(content);
+    const startLine = text.slice(0, startOffset).split('\n').length - 1;
+    const endLine = startLine + (content.split('\n').length - 1);
+    blocks.push({ type: kind, content: dedentedContent, range: { startLine, endLine } });
+  }
+  while (pos < text.length) {
+    const nextModule = text.indexOf('/-!', pos);
+    const nextDoc = text.indexOf('/--', pos);
+    let start = -1, kind = null;
+    if (nextModule !== -1 && (nextDoc === -1 || nextModule < nextDoc)) { start = nextModule; kind = 'module-doc'; }
+    else if (nextDoc !== -1) { start = nextDoc; kind = 'doc-comment'; }
+    if (start === -1) break;
+    if (start > last) pushCode(text.slice(last, start));
+    const contentStart = start + 3;
+    const end = findDocCommentEnd(text, contentStart);
+    if (end === -1) { pushCode(text.slice(start)); last = text.length; break; }
+    const rawContent = text.slice(contentStart, end);
+    pushComment(kind, rawContent, start, end);
+    pos = end + 2; last = pos;
+  }
+  if (last < text.length) pushCode(text.slice(last));
+  return blocks.filter(b => {
+    if (b.type === 'code') return b.source.trim().length > 0;
+    if (b.type === 'mermaid') return b.source.trim().length > 0;
+    return b.content.trim().length > 0;
+  });
+}
+
+function splitMermaidBlocks(content) {
+  const result = [];
+  const codeBlockRegex = /^```mermaid\s*\n([\s\S]*?)^```\s*$/gm;
+  let lastIndex = 0, match;
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    const textContent = content.substring(lastIndex, match.index);
+    if (textContent.trim().length > 0) result.push({ type: 'text', content: textContent.trim() });
+    const mermaidSource = match[1];
+    if (mermaidSource.trim().length > 0) result.push({ type: 'mermaid', source: trimEmptyLines(mermaidSource) });
+    lastIndex = codeBlockRegex.lastIndex;
+  }
+  if (lastIndex < content.length) {
+    const remaining = content.substring(lastIndex);
+    if (remaining.trim().length > 0) result.push({ type: 'text', content: remaining.trim() });
+  }
+  if (result.length === 0 && content.trim().length > 0) result.push({ type: 'text', content: content.trim() });
+  return result;
+}
+
+function expandCommentBlock(block) {
+  if (block.type !== 'module-doc' && block.type !== 'doc-comment') return [block];
+  const subBlocks = splitMermaidBlocks(block.content);
+  if (subBlocks.length === 1 && subBlocks[0].type === 'text') return [block];
+  const result = [];
+  for (const sub of subBlocks) {
+    if (sub.type === 'text') result.push({ type: block.type, content: sub.content, range: block.range });
+    else result.push({ type: 'mermaid', source: sub.source, range: block.range });
+  }
+  return result;
+}
+
+function parseLean(text) {
+  const lex = splitLeanDocComments(text);
+  return lex.flatMap(b => expandCommentBlock(b));
+}
+
+/* ================================================================
+   Lean シンタックスハイライター
+   ================================================================ */
+const KW = new Set(['def','abbrev','theorem','lemma','example','noncomputable',
+  'private','protected','instance','class','structure','inductive','where','with',
+  'extends','deriving','namespace','end','section','open','import','export',
+  'universe','variable','attribute','notation','macro','syntax','elab',
+  'by','do','return','let','have','show','from','fun','match','if','then','else',
+  'for','while','mut','pure','calc','suffices','obtain','refine','exact','apply',
+  'intro','intros','cases','induction','constructor','use','rfl','simp','ring',
+  'omega','linarith','norm_num','decide','native_decide','trivial','assumption',
+  'contradiction','aesop','tauto','field_simp','push_neg','pull_neg']);
+const TY = new Set(['Nat','Int','Bool','String','Float','Char','UInt8','UInt16',
+  'UInt32','UInt64','Int8','Int16','Int32','Int64','List','Array','Vector',
+  'Option','Result','IO','Type','Prop','Sort','Unit','Empty','True','False',
+  'Eq','And','Or','Not','Iff','Exists','Sigma','Subtype','Fin','BitVec']);
+const TA = new Set(['native_decide','decide','rfl','simp','ring','omega',
+  'linarith','norm_num','exact','apply','intro','intros','cases','rcases',
+  'induction','constructor','use','refine','suffices','obtain','contradiction',
+  'trivial','assumption','aesop','tauto','field_simp','push_neg','pull_neg',
+  'positivity','norm_cast','push_cast','ext','funext','congr','conv','rw',
+  'rewrite','gcongr','abel']);
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function hlLine(raw) {
+  let cmt = -1, inStr = false;
+  for (let i = 0; i < raw.length - 1; i++) {
+    if (raw[i]==='"' && (i===0||raw[i-1]!=='\\')) inStr=!inStr;
+    if (!inStr && raw[i]==='-' && raw[i+1]==='-') { cmt=i; break; }
+  }
+  const code = cmt>=0 ? raw.slice(0,cmt) : raw;
+  const tail = cmt>=0 ? raw.slice(cmt) : '';
+  let out='', i=0;
+  while (i < code.length) {
+    if (code[i]==='"') {
+      let j=i+1;
+      while(j<code.length&&(code[j]!=='"'||code[j-1]==='\\'))j++;
+      out+=`<span class="hl-string">${esc(code.slice(i,j+1))}</span>`; i=j+1; continue;
+    }
+    if (code[i]==='0'&&i+1<code.length&&(code[i+1]==='b'||code[i+1]==='x')) {
+      let j=i+2;
+      while(j<code.length&&/[0-9a-fA-F_]/.test(code[j]))j++;
+      let sf='';
+      if(j<code.length&&code[j]==='#'){let k=j+1;while(k<code.length&&/\d/.test(code[k]))k++;sf=esc(code.slice(j,k));j=k;}
+      out+=`<span class="hl-number">${esc(code.slice(i,j))}${sf}</span>`; i=j; continue;
+    }
+    if (/\d/.test(code[i])&&(i===0||!/\w/.test(code[i-1]))) {
+      let j=i;
+      while(j<code.length&&/[\d_]/.test(code[j]))j++;
+      out+=`<span class="hl-number">${esc(code.slice(i,j))}</span>`; i=j; continue;
+    }
+    if (/[a-zA-Z_]/.test(code[i])||code.charCodeAt(i)>127) {
+      let j=i+1;
+      while(j<code.length&&(/[\w']/.test(code[j])||/[₀-₉]/.test(code[j])||code.charCodeAt(j)>127))j++;
+      const w=code.slice(i,j), e2=esc(w);
+      if      (KW.has(w)) out+=`<span class="hl-keyword">${e2}</span>`;
+      else if (TA.has(w)) out+=`<span class="hl-tactic">${e2}</span>`;
+      else if (TY.has(w)) out+=`<span class="hl-type">${e2}</span>`;
+      else if (/^[A-Z]/.test(w)) out+=`<span class="hl-type">${e2}</span>`;
+      else out+=e2;
+      i=j; continue;
+    }
+    let hit=false;
+    for (const op of ['^^^','&&&','|||','<<<','>>>','<|>',':=','=>','->','<-','::','..']) {
+      if (code.startsWith(op,i)) { out+=`<span class="hl-op">${esc(op)}</span>`; i+=op.length; hit=true; break; }
+    }
+    if (!hit) { out+=esc(code[i]); i++; }
+  }
+  if (tail) out+=`<span class="hl-comment">${esc(tail)}</span>`;
+  return out;
+}
+function hlLean(code) { return code.split('\n').map(hlLine).join('\n'); }
+
+/* ================================================================
+   Markdown → HTML
+   ================================================================ */
+function mdToHtml(content) {
+  const store = [];
+  let s = content;
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, m => { store.push(m); return '\x02M'+(store.length-1)+'\x03'; });
+  s = s.replace(/\$([^\n$]+?)\$/g,     m => { store.push(m); return '\x02M'+(store.length-1)+'\x03'; });
+  let html = marked.parse(s);
+  html = html.replace(/\x02M(\d+)\x03/g, (_,i) => store[+i]);
+  return html;
+}
+
+/* ================================================================
+   レンダリング
+   ================================================================ */
+let mxIdx = 0;
+
+function render(blocks) {
+  const nb = document.getElementById('notebook');
+  let html = '';
+  for (const b of blocks) {
+    if (b.type==='module-doc'||b.type==='doc-comment') {
+      const cls = b.type==='module-doc' ? 'block-module-doc' : 'block-doc-comment';
+      html += `<div class="${cls}">${mdToHtml(b.content)}</div>\n`;
+    } else if (b.type==='code') {
+      html += `<div class="block-code"><div class="block-code-header">lean4</div><pre>${hlLean(b.source)}</pre></div>\n`;
+    } else if (b.type==='mermaid') {
+      html += `<div class="block-mermaid"><div class="mermaid" id="mx-${++mxIdx}">${esc(b.source)}</div></div>\n`;
+    }
+  }
+  nb.innerHTML = html;
+
+  // TOC
+  let tocHtml='', hi=0;
+  nb.querySelectorAll('h1,h2,h3').forEach(h => {
+    const id='h'+hi++; h.id=id;
+    tocHtml+=`<a href="#${id}" class="${h.tagName.toLowerCase()}">${h.textContent}</a>\n`;
+  });
+  document.getElementById('toc').innerHTML = tocHtml;
+
+  const h1 = nb.querySelector('h1');
+  if (h1) {
+    document.getElementById('doc-title').textContent = h1.textContent;
+    document.title = h1.textContent+' — Lean Notebook';
+  }
+
+  mermaid.initialize({
+    startOnLoad:false, theme:'neutral',
+    themeVariables:{
+      background:'#ffffff', mainBkg:'#dbeafe',
+      nodeBorder:'#93c5fd', lineColor:'#2563eb',
+      textColor:'#1a2233', fontSize:'13px',
+      primaryColor:'#dbeafe', primaryTextColor:'#1d4ed8',
+      primaryBorderColor:'#93c5fd',
+      edgeLabelBackground:'#f4f7fb',
+    }
+  });
+  mermaid.run({ querySelector:'.mermaid' }).catch(console.warn);
+
+  if (window.MathJax && MathJax.typesetPromise)
+    MathJax.typesetPromise([nb]).then(() => {
+      nb.querySelectorAll('mjx-container[display="true"]').forEach(el => {
+        if (!el.parentElement.classList.contains('mjx-display-wrap')) {
+          const wrap = document.createElement('div');
+          wrap.className = 'mjx-display-wrap';
+          el.parentNode.insertBefore(wrap, el);
+          wrap.appendChild(el);
+        }
+      });
+    }).catch(console.warn);
+}
+
+/* ================================================================
+   起動
+   ================================================================ */
+function boot() {
+  if (typeof marked==='undefined'||typeof mermaid==='undefined') { setTimeout(boot,100); return; }
+  marked.use({ gfm:true, breaks:true });
+  const el = document.getElementById('lean-source');
+  if (!el) return;
+
+  const rawPre = document.getElementById('lean-raw-pre');
+  rawPre.innerHTML = hlLean(el.textContent);
+
+  const blocks = parseLean(el.textContent);
+  render(blocks);
+
+  const nb      = document.getElementById('notebook');
+  const leanRaw = document.getElementById('lean-raw');
+  const appEl   = document.getElementById('app');
+  document.querySelectorAll('input[name="view"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      if (radio.value === 'lean') {
+        nb.style.display      = 'none';
+        leanRaw.style.display = 'block';
+        appEl.classList.add('lean-mode');
+      } else {
+        nb.style.display      = '';
+        leanRaw.style.display = 'none';
+        appEl.classList.remove('lean-mode');
+      }
+    });
+  });
+}
+window.addEventListener('load', boot);
+</script>
+</body>
+</html>
