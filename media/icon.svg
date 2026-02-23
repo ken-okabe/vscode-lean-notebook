@@ -1,43 +1,65 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="128" height="128" viewBox="37.5 37.5 925 925">
   <defs>
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#2563eb" flood-opacity="0.22"/>
-    </filter>
+    <g id="glyphs">
+      <symbol id="glyph2-1" overflow="visible"><path style="stroke:none" d="m 24.796875,0.28125 0,-64.046875 22.5625,0 0,-1.484375 -46.515625,0 0,1.484375 22.546875,0 0,64.046875 z"/></symbol>
+      <symbol id="glyph2-2" overflow="visible"><path style="stroke:none" d="m 5.78125,-65.15625 -1.40625,0 0,65.15625 1.40625,0 0,-32.34375 40.921875,0 0,32.34375 1.484375,0 0,-65.15625 -1.484375,0 0,31.40625 -40.921875,0 z"/></symbol>
+      <symbol id="glyph2-3" overflow="visible"><path style="stroke:none" d="m 5.875,-31.875 33.75,0 0,-1.5 -33.75,0 0,-30.390625 34.484375,0 0,-1.390625 -35.984375,0 0,65.15625 36.171875,0 0,-1.390625 -34.671875,0 z"/></symbol>
+      <symbol id="glyph2-4" overflow="visible"><path style="stroke:none" d="m 67.765625,-32.625 c 0,8.859375 -3.53125,16.78125 -9.21875,22.5625 -5.78125,5.875 -13.796875,9.5 -22.5625,9.5 -8.765625,0 -16.6875,-3.625 -22.46875,-9.5 C 7.828125,-15.84375 4.1875,-23.765625 4.1875,-32.625 c 0,-8.859375 3.640625,-16.78125 9.328125,-22.5625 5.78125,-5.875 13.703125,-9.5 22.46875,-9.5 8.765625,0 16.78125,3.625 22.5625,9.5 5.6875,5.78125 9.21875,13.703125 9.21875,22.5625 z m -65.0625,0 c 0,9.234375 3.828125,17.609375 9.78125,23.671875 5.96875,6.15625 14.359375,9.890625 23.5,9.890625 9.234375,0 17.515625,-3.734375 23.578125,-9.890625 5.96875,-6.0625 9.796875,-14.4375 9.796875,-23.671875 0,-9.234375 -3.828125,-17.625 -9.796875,-23.671875 C 53.5,-62.453125 45.21875,-66.1875 35.984375,-66.1875 c -9.140625,0 -17.53125,3.734375 -23.5,9.890625 C 6.53125,-50.25 2.703125,-41.859375 2.703125,-32.625 z"/></symbol>
+      <symbol id="glyph2-5" overflow="visible"><path style="stroke:none" d="m 5.78125,-63.765625 21.15625,0 c 24.234375,0 24.234375,35.234375 0,35.234375 l -12.671875,0 0,1.40625 L 44.28125,0 46.421875,0 16.40625,-27.125 l 10.53125,0 c 26.109375,0 26.109375,-38.125 0,-38.125 l -22.5625,0 0,65.25 1.40625,0 z"/></symbol>
+      <symbol id="glyph2-6" overflow="visible"><path style="stroke:none" d="m 5.78125,-63.109375 26.5625,39.53125 1.21875,0 26.5625,-39.53125 0,63.109375 1.40625,0 0,-65.25 -1.5,0 -27.125,39.984375 L 5.875,-65.25 l -1.5,0 0,65.25 1.40625,0 z"/></symbol>
+      <symbol id="glyph2-8" overflow="visible"><path style="stroke:none" d="m 4.375,-64.5 c 0,21.53125 0,42.96875 0,64.5 l 1.5,0 0,-24.796875 21.0625,0 c 26.109375,0 26.109375,-40.453125 0,-40.453125 l -22.5625,0 z m 1.5,38.3125 0,-37.578125 21.0625,0 c 24.234375,0 24.234375,37.578125 0,37.578125 z"/></symbol>
+      <symbol id="glyph2-9" overflow="visible"><path style="stroke:none" d="m 5.78125,-63.765625 21.15625,0 c 24.234375,0 24.234375,35.234375 0,35.234375 l -12.671875,0 0,1.40625 L 44.28125,0 46.421875,0 16.40625,-27.125 l 10.53125,0 c 26.109375,0 26.109375,-38.125 0,-38.125 l -22.5625,0 0,65.25 1.40625,0 z"/></symbol>
+      <symbol id="glyph2-10" overflow="visible"><path style="stroke:none" d="m 67.03125,-32.625 c 0,8.859375 -3.546875,16.78125 -9.234375,22.5625 -5.78125,5.875 -13.796875,9.5 -22.5625,9.5 -8.765625,0 -16.6875,-3.625 -22.46875,-9.5 -5.6875,-5.78125 -9.3125,-13.703125 -9.3125,-22.5625 0,-8.859375 3.625,-16.78125 9.3125,-22.5625 5.78125,-5.875 13.703125,-9.5 22.46875,-9.5 8.765625,0 16.78125,3.625 22.5625,9.5 5.6875,5.78125 9.234375,13.703125 9.234375,22.5625 z m -65.078125,0 c 0,9.234375 3.828125,17.609375 9.796875,23.671875 5.96875,6.15625 14.34375,9.890625 23.484375,9.890625 9.234375,0 17.53125,-3.734375 23.59375,-9.890625 5.953125,-6.0625 9.78125,-14.4375 9.78125,-23.671875 0,-9.234375 -3.828125,-17.625 -9.78125,-23.671875 -6.0625,-6.15625 -14.359375,-9.890625 -23.59375,-9.890625 -9.140625,0 -17.515625,3.734375 -23.484375,9.890625 C 5.78125,-50.25 1.953125,-41.859375 1.953125,-32.625 z"/></symbol>
+      <symbol id="glyph2-11" overflow="visible"><path style="stroke:none" d="m 27.5,-0.84375 -25.359375,-64.3125 -1.578125,0 26.1875,66.1875 1.59375,0 26.1875,-66.1875 -1.578125,0 z"/></symbol>
+      <symbol id="glyph2-12" overflow="visible"><path style="stroke:none" d="m 5.875,-31.875 33.75,0 0,-1.5 -33.75,0 0,-30.390625 34.484375,0 0,-1.390625 -35.984375,0 0,65.15625 36.171875,0 0,-1.390625 -34.671875,0 z"/></symbol>
+    </g>
   </defs>
 
-  <!-- Page body -->
-  <rect x="4" y="4" width="120" height="120" rx="12" fill="#f0f8ff" stroke="#1d4ed8" stroke-width="4" filter="url(#shadow)"/>
+  <rect x="50" y="50" width="900" height="900" rx="80" fill="#ffffff" />
+  
+  <path d="M 220 50 L 130 50 A 80 80 0 0 0 50 130 L 50 870 A 80 80 0 0 0 130 950 L 220 950 Z" fill="#2D5DCC"/>
+  
+  <line x1="220" y1="50" x2="220" y2="950" stroke="#2D5DCC" stroke-width="25"/>
+  
+  <rect x="50" y="50" width="900" height="900" rx="80" fill="none" stroke="#2D5DCC" stroke-width="25"/>
 
-  <!-- Spine -->
-  <rect x="4" y="4" width="22" height="120" rx="12" fill="#1d4ed8"/>
-  <rect x="15" y="4" width="11" height="120" fill="#1d4ed8"/>
-  <!-- Spine highlight -->
-  <rect x="7" y="10" width="5" height="108" rx="2.5" fill="white" opacity="0.28"/>
+  <g fill="#ffffff">
+    <circle cx="135" cy="180" r="35"/>
+    <circle cx="135" cy="308" r="35"/>
+    <circle cx="135" cy="436" r="35"/>
+    <circle cx="135" cy="564" r="35"/>
+    <circle cx="135" cy="692" r="35"/>
+    <circle cx="135" cy="820" r="35"/>
+  </g>
 
-  <!-- Binding rings -->
-  <circle cx="18" cy="22"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
-  <circle cx="18" cy="40"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
-  <circle cx="18" cy="58"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
-  <circle cx="18" cy="76"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
-  <circle cx="18" cy="94"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
-  <circle cx="18" cy="112" r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+  <g id="content-layer">
+    
+    <g transform="translate(251, 80) scale(0.91)">
+      <g transform="translate(-10, 0)">
+        <path style="fill:#2D5DCC;stroke:none" d="M 323.27424,164.46165 H 179.97856 v -5.37733 H 323.27424 V 49.426527 H 176.82233 v -5.0454 H 329.6023 V 279.49677 H 24.725019 V 44.384482 h 6.339258 V 274.48623 H 323.27424 Z"/>
+        <path style="fill:#2D5DCC;stroke:none" d="M 554.5792,279.49677 V 54.817138 L 737.45268,279.49677 h 6.32807 V 44.463181 H 737.8433 V 270.08311 L 553.78233,44.463181 h -5.5312 V 279.49677 Z"/>
+        <path style="fill:none;stroke:#2D5DCC;stroke-width:5.88524" d="M 326.6547,45.441137 438.66586,272.71558 551.19521,45.530869"/>
+        <path style="fill:none;stroke:#2D5DCC;stroke-width:5.88524" d="M 383.1837,161.62227 H 494.68689"/>
+        <g style="fill:#2D5DCC">
+          <use xlink:href="#glyph2-1" x="26.006697" y="388.08368"/>
+          <use xlink:href="#glyph2-2" x="74.570259" y="388.08368"/>
+          <use xlink:href="#glyph2-3" x="127.04873" y="388.08368"/>
+          <use xlink:href="#glyph2-4" x="170.01956" y="388.08368"/>
+          <use xlink:href="#glyph2-5" x="241.79297" y="388.08368"/>
+          <use xlink:href="#glyph2-3" x="291.10223" y="388.08368"/>
+          <use xlink:href="#glyph2-6" x="334.07306" y="388.08368"/>
+          <use xlink:href="#glyph2-8" x="432.78479" y="388.08368"/>
+          <use xlink:href="#glyph2-9" x="481.34836" y="388.08368"/>
+          <use xlink:href="#glyph2-10" x="530.47119" y="388.08368"/>
+          <use xlink:href="#glyph2-11" x="599.16858" y="388.08368"/>
+          <use xlink:href="#glyph2-12" x="654.16376" y="388.08368"/>
+          <use xlink:href="#glyph2-9" x="697.13458" y="388.08368"/>
+        </g>
+      </g>
+    </g>
 
-  <!-- Page lines -->
-  <rect x="32" y="14" width="88" height="7" rx="3" fill="#5da8f8" opacity="0.8"/>
-  <rect x="32" y="28" width="72" height="7" rx="3" fill="#5da8f8" opacity="0.6"/>
-
-  <!-- ∀ glow -->
-  <text x="74" y="83" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700"
-    text-anchor="middle" fill="#3b82f6" opacity="0.35" filter="url(#glow)">∀</text>
-  <!-- ∀ symbol -->
-  <text x="74" y="83" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700"
-    text-anchor="middle" fill="#1132b4">∀</text>
-
-  <!-- lean label -->
-  <text x="74" y="120" font-family="'Courier New', Courier, monospace" font-size="28" font-weight="700"
-    text-anchor="middle" fill="#1d4ed8">lean</text>
+    <text x="585" y="650" font-family="'Century Gothic', 'Futura', 'Montserrat', sans-serif" font-size="220" font-weight="normal" fill="#2D5DCC" text-anchor="middle">NOTE</text>
+    <text x="585" y="880" font-family="'Century Gothic', 'Futura', 'Montserrat', sans-serif" font-size="220" font-weight="normal" fill="#2D5DCC" text-anchor="middle">BOOK</text>
+    
+  </g>
 </svg>
