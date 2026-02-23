@@ -302,9 +302,6 @@ try {
                 if (isLean) {
                     // hlLean は HTML エスケープ済み文字列を返す → innerHTML に直接セット
                     el.innerHTML = hlLean(el.textContent || '');
-                } else if (window.Prism) {
-                    // lean 以外は Prism にフォールバック
-                    Prism.highlightElement(el);
                 }
             });
 

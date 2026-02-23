@@ -2,7 +2,7 @@
     "name": "leannotebook",
     "displayName": "LeanNotebook",
     "description": "Rich notebook interface for Lean 4 based on VanJS",
-    "version": "0.12.5",
+    "version": "0.12.7",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -12,6 +12,30 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/ken-okabe/vscode-lean-notebook"
+    },
+    "author": {
+        "name": "Ken Okabe",
+        "email": "kentechgeek@gmail.com"
+    },
+    "license": "MIT",
+    "homepage": "https://github.com/ken-okabe/vscode-lean-notebook",
+    "bugs": {
+        "url": "https://github.com/ken-okabe/vscode-lean-notebook/issues"
+    },
+    "keywords": [
+        "lean4",
+        "lean",
+        "theorem-proving",
+        "formal-verification",
+        "notebook",
+        "interactive",
+        "mathematics",
+        "proof-assistant"
+    ],
+    "icon": "media/icon.png",
+    "galleryBanner": {
+        "color": "#2563eb",
+        "theme": "dark"
     },
     "publisher": "ken-okabe",
     "activationEvents": [
@@ -76,7 +100,6 @@
     "dependencies": {
         "marked": "^9.0.0",
         "mermaid": "^11.12.2",
-        "prismjs": "^1.30.0",
         "vanjs-core": "^1.2.3",
         "vscode-languageclient": "^9.0.1"
     }

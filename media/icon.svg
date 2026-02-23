@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#2563eb" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- Page body -->
+  <rect x="4" y="4" width="120" height="120" rx="12" fill="#f0f8ff" stroke="#1d4ed8" stroke-width="4" filter="url(#shadow)"/>
+
+  <!-- Spine -->
+  <rect x="4" y="4" width="22" height="120" rx="12" fill="#1d4ed8"/>
+  <rect x="15" y="4" width="11" height="120" fill="#1d4ed8"/>
+  <!-- Spine highlight -->
+  <rect x="7" y="10" width="5" height="108" rx="2.5" fill="white" opacity="0.28"/>
+
+  <!-- Binding rings -->
+  <circle cx="18" cy="22"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+  <circle cx="18" cy="40"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+  <circle cx="18" cy="58"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+  <circle cx="18" cy="76"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+  <circle cx="18" cy="94"  r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+  <circle cx="18" cy="112" r="8" fill="white" stroke="#1d4ed8" stroke-width="3"/>
+
+  <!-- Page lines -->
+  <rect x="32" y="14" width="88" height="7" rx="3" fill="#5da8f8" opacity="0.8"/>
+  <rect x="32" y="28" width="72" height="7" rx="3" fill="#5da8f8" opacity="0.6"/>
+
+  <!-- ∀ glow -->
+  <text x="74" y="83" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700"
+    text-anchor="middle" fill="#3b82f6" opacity="0.35" filter="url(#glow)">∀</text>
+  <!-- ∀ symbol -->
+  <text x="74" y="83" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700"
+    text-anchor="middle" fill="#1132b4">∀</text>
+
+  <!-- lean label -->
+  <text x="74" y="120" font-family="'Courier New', Courier, monospace" font-size="28" font-weight="700"
+    text-anchor="middle" fill="#1d4ed8">lean</text>
+</svg>

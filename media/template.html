@@ -160,7 +160,7 @@ mjx-container[display="true"]{display:block!important;overflow:visible!important
 
 <script>
 /* ================================================================
-   leanCommentParser の JS 移植
+   JS port of leanCommentParser
    ================================================================ */
 function trimEmptyLines(code) {
   const lines = code.split('\n');
@@ -301,7 +301,7 @@ function parseLean(text) {
 }
 
 /* ================================================================
-   Lean シンタックスハイライター
+   Lean syntax highlighter
    ================================================================ */
 const KW = new Set(['def','abbrev','theorem','lemma','example','noncomputable',
   'private','protected','instance','class','structure','inductive','where','with',
@@ -388,7 +388,7 @@ function mdToHtml(content) {
 }
 
 /* ================================================================
-   レンダリング
+   Rendering
    ================================================================ */
 let mxIdx = 0;
 
@@ -448,7 +448,7 @@ function render(blocks) {
 }
 
 /* ================================================================
-   起動
+   Boot
    ================================================================ */
 function boot() {
   if (typeof marked==='undefined'||typeof mermaid==='undefined') { setTimeout(boot,100); return; }

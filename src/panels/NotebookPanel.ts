@@ -238,11 +238,6 @@ export class NotebookPanel {
         const vanUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'van.min.js'));
         const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'marked.min.js'));
 
-        // Prism.js for syntax highlighting
-        const prismJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism.min.js'));
-        const prismLightCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism-github-light.css'));
-        const prismDarkCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'prism-github-dark.css'));
-
         // Mermaid for diagrams
         const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'mermaid.min.js'));
 
@@ -253,8 +248,6 @@ export class NotebookPanel {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="${styleUri}" rel="stylesheet">
-            <link id="prism-theme-light" href="${prismLightCssUri}" rel="stylesheet" disabled>
-            <link id="prism-theme-dark" href="${prismDarkCssUri}" rel="stylesheet">
 
             <script src="${markedUri}"></script>
             <script>
@@ -270,7 +263,6 @@ export class NotebookPanel {
                 };
             </script>
             <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-            <script src="${prismJsUri}"></script>
             <script src="${mermaidUri}"></script>
 
             <title>Notebook Preview</title>
@@ -285,41 +277,6 @@ export class NotebookPanel {
             </div>
             <script>
                 console.log("[Webview] HTML loaded.");
-                
-                // Detect VS Code theme and switch Prism theme accordingly
-                function updatePrismTheme() {
-                    const bodyStyle = getComputedStyle(document.body);
-                    const bgColor = bodyStyle.backgroundColor;
-                    
-                    // Parse RGB to determine if it's dark or light
-                    const rgb = bgColor.match(/\\d+/g);
-                    let isDark = true; // default to dark
-                    
-                    if (rgb) {
-                        const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
-                        isDark = brightness < 128;
-                    }
-                    
-                    const lightTheme = document.getElementById('prism-theme-light');
-                    const darkTheme = document.getElementById('prism-theme-dark');
-                    
-                    if (isDark) {
-                        lightTheme.disabled = true;
-                        darkTheme.disabled = false;
-                        console.log('[Prism] Dark theme activated');
-                    } else {
-                        lightTheme.disabled = false;
-                        darkTheme.disabled = true;
-                        console.log('[Prism] Light theme activated');
-                    }
-                }
-                
-                // Update theme on load
-                updatePrismTheme();
-                
-                // Watch for theme changes
-                const observer = new MutationObserver(updatePrismTheme);
-                observer.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] });
                 
                 window.addEventListener('error', function(event) {
                     console.error("[Webview Error]", event.message, event.filename, event.lineno);
