@@ -40,7 +40,11 @@
 }
 
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  width: 100%;
+  height: 100%;
+}
 
 body {
   background: var(--bg);
@@ -49,6 +53,7 @@ body {
   font-size: 16px;
   line-height: 1.6;
   min-height: 100vh;
+  width: 100%;
 }
 
 /* ================================================================
@@ -111,6 +116,11 @@ body {
 #app {
   overflow: auto;
   min-width: 0;
+  width: 100%;
+}
+
+#layout {
+  width: 100%;
 }
 
 .notebook {
