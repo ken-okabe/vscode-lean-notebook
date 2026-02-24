@@ -1,137 +1,150 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lean Notebook Viewer</title>
-<script>
-// MATHJAX_CONFIG is injected here by htmlExporter.ts from renderer.js at export time.
-// Do NOT edit this manually — edit MATHJAX_CONFIG in renderer.js instead.
-MathJax = %%MATHJAX_CONFIG%%;
-</script>
-<script src="%%MATHJAX_CDN_URL%%"></script>
-<script>%%MARKED_JS%%</script>
-<script>%%MERMAID_JS%%</script>
-<script>%%VIZ_JS%%</script>
-<style>
-/* Injected from style.css by htmlExporter.ts — do NOT edit here. Edit style.css instead. */
-%%STYLES%%
-</style>
-</head>
-<body>
-<script type="text/x-lean-source" id="lean-source">%%LEAN_SOURCE%%</script>
+<html lang="en">
 
-<div id="app">
-  <div id="topbar">
-    <div class="logo">lean<span> notebook</span></div>
-    <div class="sep">·</div>
-    <div class="doc-title" id="doc-title">Loading…</div>
-    <div id="view-toggle">
-      <input type="radio" name="view" id="vlean" value="lean">
-      <label for="vlean">lean</label>
-      <input type="radio" name="view" id="vhtml" value="html" checked>
-      <label for="vhtml">HTML</label>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lean Notebook Viewer</title>
+  <script>
+    // MATHJAX_CONFIG is injected here by htmlExporter.ts from renderer.js at export time.
+    // Do NOT edit this manually — edit MATHJAX_CONFIG in renderer.js instead.
+    MathJax = %% MATHJAX_CONFIG %%;
+  </script>
+  <script src="%%MATHJAX_CDN_URL%%"></script>
+  <script>%% MARKED_JS %%</script>
+  <script>%% MERMAID_JS %%</script>
+  <script>%% VIZ_JS %%</script>
+  <style>
+    /* Injected from style.css by htmlExporter.ts — do NOT edit here. Edit style.css instead. */
+    %%STYLES%%
+  </style>
+</head>
+
+<body>
+  <script type="text/x-lean-source" id="lean-source">%%LEAN_SOURCE%%</script>
+
+  <div id="app">
+    <div id="topbar">
+      <div class="logo">lean<span> notebook</span></div>
+      <div class="sep">·</div>
+      <div class="doc-title" id="doc-title">Loading…</div>
+      <div id="view-toggle">
+        <input type="radio" name="view" id="vlean" value="lean">
+        <label for="vlean">lean</label>
+        <input type="radio" name="view" id="vhtml" value="html" checked>
+        <label for="vhtml">HTML</label>
+      </div>
+    </div>
+    <nav id="sidebar">
+      <div id="toc-label">Contents</div>
+      <div id="toc"></div>
+    </nav>
+    <main id="notebook"></main>
+    <div id="lean-raw">
+      <pre id="lean-raw-pre"></pre>
     </div>
   </div>
-  <nav id="sidebar">
-    <div id="toc-label">Contents</div>
-    <div id="toc"></div>
-  </nav>
-  <main id="notebook"></main>
-  <div id="lean-raw"><pre id="lean-raw-pre"></pre></div>
-</div>
 
-<script>
-%%RENDERER_JS%%
-</script>
-<script>
-/* ================================================================
-   Rendering and Boot — template.html specific UI logic
-   All shared logic (hlLean, mdToHtml, parseLean etc.) lives in
-   renderer.js which is inlined above by htmlExporter.ts at export time.
-   ================================================================ */
-async function render(blocks) {
-  const nb = document.getElementById('notebook');
-  nb.innerHTML = '';
+  <script>
+%% RENDERER_JS %%
+  </script>
+  <script>
+      /* ================================================================
+         Rendering and Boot — template.html specific UI logic
+         All shared logic (hlLean, mdToHtml, parseLean etc.) lives in
+         renderer.js which is inlined above by htmlExporter.ts at export time.
+         ================================================================ */
+      async function render(blocks) {
+        const nb = document.getElementById('notebook');
+        nb.innerHTML = '';
 
-  for (const b of blocks) {
-    if (b.type==='module-doc'||b.type==='doc-comment') {
-      const cls = b.type==='module-doc' ? 'block-module-doc' : 'block-doc-comment';
-      const el = document.createElement('div');
-      el.className = cls;
-      el.innerHTML = mdToHtml(b.content);
-      nb.appendChild(el);
-    } else if (b.type==='code') {
-      const el = document.createElement('div');
-      el.className = 'block-code';
-      el.innerHTML = `<div class="block-code-header">lean4</div><pre>${hlLean(b.source)}</pre>`;
-      nb.appendChild(el);
-    } else if (b.type==='mermaid') {
-      const wrap = document.createElement('div');
-      wrap.className = 'block-mermaid';
-      nb.appendChild(wrap);
-      // Use shared renderMermaid() from renderer.js — same as Extension side
-      await renderMermaid(b.source, wrap);
-    } else if (b.type==='graphviz') {
-      const wrap = document.createElement('div');
-      wrap.className = 'block-graphviz';
-      nb.appendChild(wrap);
-      // Use shared renderGraphviz() from renderer.js — same as Extension side
-      await renderGraphviz(b.source, wrap);
-    }
-  }
+        for (const b of blocks) {
+          if (b.type === 'module-doc' || b.type === 'doc-comment') {
+            const cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+            const el = document.createElement('div');
+            el.className = cls;
+            el.innerHTML = mdToHtml(b.content);
+            // Apply Lean syntax highlighting to ```lean code fences inside markdown
+            el.querySelectorAll('pre code').forEach(code => {
+              const isLean = code.classList.contains('language-lean') ||
+                code.classList.contains('language-lean4');
+              if (isLean) {
+                code.innerHTML = hlLean(code.textContent || '');
+              }
+            });
+            nb.appendChild(el);
+          } else if (b.type === 'code') {
+            const el = document.createElement('div');
+            el.className = 'block-code';
+            el.innerHTML = `<div class="block-code-header">lean4</div><pre class="lean-source">${hlLean(b.source)}</pre>`;
+            nb.appendChild(el);
+          } else if (b.type === 'mermaid') {
+            const wrap = document.createElement('div');
+            wrap.className = 'block-mermaid';
+            nb.appendChild(wrap);
+            // Use shared renderMermaid() from renderer.js — same as Extension side
+            await renderMermaid(b.source, wrap);
+          } else if (b.type === 'graphviz') {
+            const wrap = document.createElement('div');
+            wrap.className = 'block-graphviz';
+            nb.appendChild(wrap);
+            // Use shared renderGraphviz() from renderer.js — same as Extension side
+            await renderGraphviz(b.source, wrap);
+          }
+        }
 
-  // TOC
-  let tocHtml='', hi=0;
-  nb.querySelectorAll('h1,h2,h3').forEach(h => {
-    const id='h'+hi++; h.id=id;
-    tocHtml+=`<a href="#${id}" class="${h.tagName.toLowerCase()}">${h.textContent}</a>\n`;
-  });
-  document.getElementById('toc').innerHTML = tocHtml;
+        // TOC
+        let tocHtml = '', hi = 0;
+        nb.querySelectorAll('h1,h2,h3').forEach(h => {
+          const id = 'h' + hi++; h.id = id;
+          tocHtml += `<a href="#${id}" class="${h.tagName.toLowerCase()}">${h.textContent}</a>\n`;
+        });
+        document.getElementById('toc').innerHTML = tocHtml;
 
-  const h1 = nb.querySelector('h1');
-  if (h1) {
-    document.getElementById('doc-title').textContent = h1.textContent;
-    document.title = h1.textContent+' — Lean Notebook';
-  }
+        const h1 = nb.querySelector('h1');
+        if (h1) {
+          document.getElementById('doc-title').textContent = h1.textContent;
+          document.title = h1.textContent + ' — Lean Notebook';
+        }
 
-  // Use shared typesetMath() from renderer.js — single source of truth
-  typesetMath(nb);
-}
-
-/* ================================================================
-   Boot
-   ================================================================ */
-function boot() {
-  if (typeof marked==='undefined'||typeof mermaid==='undefined') { setTimeout(boot,100); return; }
-  marked.use({ gfm:true, breaks:true });
-  const el = document.getElementById('lean-source');
-  if (!el) return;
-
-  const rawPre = document.getElementById('lean-raw-pre');
-  rawPre.innerHTML = hlLean(el.textContent);
-
-  const blocks = parseLean(el.textContent);
-  render(blocks);
-
-  const nb      = document.getElementById('notebook');
-  const leanRaw = document.getElementById('lean-raw');
-  const appEl   = document.getElementById('app');
-  document.querySelectorAll('input[name="view"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      if (radio.value === 'lean') {
-        nb.style.display      = 'none';
-        leanRaw.style.display = 'block';
-        appEl.classList.add('lean-mode');
-      } else {
-        nb.style.display      = '';
-        leanRaw.style.display = 'none';
-        appEl.classList.remove('lean-mode');
+        // Use shared typesetMath() from renderer.js — single source of truth
+        typesetMath(nb);
       }
-    });
-  });
-}
-window.addEventListener('load', boot);
-</script>
+
+    /* ================================================================
+       Boot
+       ================================================================ */
+    function boot() {
+      if (typeof marked === 'undefined' || typeof mermaid === 'undefined') { setTimeout(boot, 100); return; }
+      marked.use({ gfm: true, breaks: true });
+      const el = document.getElementById('lean-source');
+      if (!el) return;
+
+      const rawPre = document.getElementById('lean-raw-pre');
+      rawPre.innerHTML = hlLean(el.textContent);
+
+      const blocks = parseLean(el.textContent);
+      render(blocks);
+
+      const nb = document.getElementById('notebook');
+      const leanRaw = document.getElementById('lean-raw');
+      const appEl = document.getElementById('app');
+      document.querySelectorAll('input[name="view"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          if (radio.value === 'lean') {
+            nb.style.display = 'none';
+            leanRaw.style.display = 'block';
+            appEl.classList.add('lean-mode');
+          } else {
+            nb.style.display = '';
+            leanRaw.style.display = 'none';
+            appEl.classList.remove('lean-mode');
+          }
+        });
+      });
+    }
+    window.addEventListener('load', boot);
+  </script>
 </body>
+
 </html>
