@@ -257,30 +257,24 @@ export class NotebookPanel {
 
         // Vendors
         const vanUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'van.min.js'));
-        const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'marked.min.js'));
+        const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'marked.min.js'));
 
-        // Mermaid for diagrams
-        const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'mermaid.min.js'));
+        // MathJax (local, from _libs/)
+        const mathJaxUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'mathjax', 'tex-chtml.js'));
 
-        // Viz.js (Graphviz WASM) for DOT diagrams
-        const vizUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'viz-global.js'));
+        // Mermaid for diagrams (from _libs/)
+        const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'mermaid.min.js'));
+
+        // Viz.js (Graphviz WASM, from _libs/)
+        const vizUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'viz-standalone.js'));
 
         // Read MATHJAX_CONFIG from renderer.js — single source of truth.
-        // renderer.js is loaded as a <script> tag, so MATHJAX_CONFIG is available at runtime.
-        // But MathJax CDN must see the config BEFORE it loads, so we inject it here as JSON.
         const rendererJsPath = vscode.Uri.joinPath(this._extensionUri, 'media', 'renderer.js').fsPath;
         const rendererJs = fs.readFileSync(rendererJsPath, 'utf8');
-
-        // Extract MATHJAX_CONFIG — single source of truth in renderer.js.
         const mathJaxConfigMatch = rendererJs.match(/const MATHJAX_CONFIG\s*=\s*(\{[\s\S]*?\});/);
         if (!mathJaxConfigMatch) { throw new Error('MATHJAX_CONFIG not found in renderer.js'); }
         // eslint-disable-next-line no-new-func
         const mathJaxConfigJson = JSON.stringify(new Function(`return ${mathJaxConfigMatch[1]}`)());
-
-        // Extract MATHJAX_CDN_URL — single source of truth in renderer.js.
-        const mathJaxCdnMatch = rendererJs.match(/const MATHJAX_CDN_URL\s*=\s*'([^']+)'/);
-        if (!mathJaxCdnMatch) { throw new Error('MATHJAX_CDN_URL not found in renderer.js'); }
-        const mathJaxCdnUrl = mathJaxCdnMatch[1];
 
         return `<!DOCTYPE html>
         <html lang="en">
@@ -292,11 +286,9 @@ export class NotebookPanel {
             <script src="${markedUri}"></script>
             <script src="${rendererUri}"></script>
             <script>
-                // MathJax config — extracted from MATHJAX_CONFIG in renderer.js at load time.
-                // Do NOT edit here. Edit MATHJAX_CONFIG in renderer.js instead.
                 window.MathJax = ${mathJaxConfigJson};
             </script>
-            <script id="MathJax-script" async src="${mathJaxCdnUrl}"></script>
+            <script id="MathJax-script" async src="${mathJaxUri}"></script>
             <script src="${mermaidUri}"></script>
             <script src="${vizUri}" async></script>
 

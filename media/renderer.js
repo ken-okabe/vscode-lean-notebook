@@ -147,11 +147,8 @@ function mdToHtml(content) {
 // Mermaid renderer — single shared implementation
 // Call renderMermaid(source, containerEl) from both main.js and template.html.
 // ----------------------------------------------------------------
+// (No CDN URL constants — all libraries loaded from local _libs/)
 // ----------------------------------------------------------------
-// CDN URLs — single source of truth.
-// htmlExporter.ts and NotebookPanel.ts extract these at build/load time.
-// ----------------------------------------------------------------
-const MATHJAX_CDN_URL = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
 
 const MERMAID_THEME = {
     startOnLoad: false,
@@ -282,8 +279,6 @@ function typesetMath(container) {
 
 // The canonical MathJax configuration object.
 // Used verbatim in both NotebookPanel.ts (Extension) and template.html (HTML export).
-// inlineMath uses $...$ only (not \(...\) to avoid JS escape issues).
-// displayMath uses $$...$$ only.
 const MATHJAX_CONFIG = {
     tex: {
         inlineMath: [['$', '$']],
@@ -291,7 +286,16 @@ const MATHJAX_CONFIG = {
         processEscapes: true
     },
     options: {
-        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+        menuOptions: {
+            settings: {
+                enrich: false,
+                collapsible: false,
+                speech: false,
+                braille: false,
+                assistiveMml: false
+            }
+        }
     },
     startup: { typeset: false }
 };

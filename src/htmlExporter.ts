@@ -3,68 +3,63 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Load the template HTML, inline renderer.js, and embed the Lean source.
- * renderer.js is the single source of truth for all rendering logic.
- * Inlining it ensures the exported HTML is self-contained and uses
- * exactly the same logic as the VSCode WebView.
+ * Load the template HTML, inject style.css + renderer.js + MathJax config,
+ * and embed the Lean source. Library JS files are referenced via relative
+ * paths to a _libs/ directory that is copied alongside the HTML at export time.
  */
-/**
- * Extract the MATHJAX_CONFIG object literal from renderer.js as a JSON string.
- * This is the single source of truth for MathJax configuration.
- * Both the HTML export and the VSCode WebView use this value.
- */
+
 function extractMathJaxConfig(rendererJs: string): string {
-    // Match: const MATHJAX_CONFIG = { ... }; (potentially multi-line)
     const match = rendererJs.match(/const MATHJAX_CONFIG\s*=\s*(\{[\s\S]*?\});/);
     if (!match) {
         throw new Error('MATHJAX_CONFIG not found in renderer.js — cannot build HTML export.');
     }
-    // Evaluate the object literal to produce valid JSON.
-    // We use Function() to safely evaluate the JS object literal.
     // eslint-disable-next-line no-new-func
     const cfg = new Function(`return ${match[1]}`)();
     return JSON.stringify(cfg);
 }
 
-function extractStringConst(rendererJs: string, name: string): string {
-    const match = rendererJs.match(new RegExp(`const ${name}\\s*=\\s*'([^']+)'`));
-    if (!match) { throw new Error(`${name} not found in renderer.js`); }
-    return match[1];
+/**
+ * Copy the _libs/ directory from the extension's media/ to the target location.
+ * Skips if already exists at the target.
+ */
+function copyLibs(extensionUri: vscode.Uri, targetDir: string): void {
+    const srcLibs = path.join(vscode.Uri.joinPath(extensionUri, 'media', '_libs').fsPath);
+    const dstLibs = path.join(targetDir, '_libs');
+    if (fs.existsSync(dstLibs)) return; // already present
+    copyDirRecursive(srcLibs, dstLibs);
 }
 
-function buildHtml(extensionUri: vscode.Uri, leanSource: string): string {
+function copyDirRecursive(src: string, dst: string): void {
+    fs.mkdirSync(dst, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+        const srcPath = path.join(src, entry.name);
+        const dstPath = path.join(dst, entry.name);
+        if (entry.isDirectory()) {
+            copyDirRecursive(srcPath, dstPath);
+        } else {
+            fs.copyFileSync(srcPath, dstPath);
+        }
+    }
+}
+
+function buildHtml(extensionUri: vscode.Uri, leanSource: string, libsRelPath: string = './_libs'): string {
     const templatePath = vscode.Uri.joinPath(extensionUri, 'media', 'template.html');
     const rendererPath = vscode.Uri.joinPath(extensionUri, 'media', 'renderer.js');
     const stylePath = vscode.Uri.joinPath(extensionUri, 'media', 'style.css');
-    const markedPath = vscode.Uri.joinPath(extensionUri, 'media', 'marked.min.js');
-    const mermaidPath = vscode.Uri.joinPath(extensionUri, 'media', 'mermaid.min.js');
-    const vizPath = vscode.Uri.joinPath(extensionUri, 'media', 'viz-global.js');
 
     let template = fs.readFileSync(templatePath.fsPath, 'utf8');
     const rendererJs = fs.readFileSync(rendererPath.fsPath, 'utf8');
     const styleCss = fs.readFileSync(stylePath.fsPath, 'utf8');
-    const markedJs = fs.readFileSync(markedPath.fsPath, 'utf8');
-    const mermaidJs = fs.readFileSync(mermaidPath.fsPath, 'utf8');
-    const vizJs = fs.readFileSync(vizPath.fsPath, 'utf8');
+
+    // Replace _libs/ paths with the correct relative path for this file's depth.
+    template = template.replace(/\.\/\_libs/g, libsRelPath);
 
     // Inject style.css — single source of truth for all styles.
     template = template.replace('%%STYLES%%', () => styleCss);
 
-    // Inject MATHJAX_CDN_URL from renderer.js — single source of truth.
-    const mathJaxCdnUrl = extractStringConst(rendererJs, 'MATHJAX_CDN_URL');
-    template = template.replace('%%MATHJAX_CDN_URL%%', () => mathJaxCdnUrl);
-
     // Inject MATHJAX_CONFIG from renderer.js — single source of truth.
     const mathJaxConfigJson = extractMathJaxConfig(rendererJs);
     template = template.replace('%%MATHJAX_CONFIG%%', () => mathJaxConfigJson);
-
-    // Inline marked.js, mermaid.js, and viz.js — same local files as Extension uses.
-    const safeMarkedJs = markedJs.replace(/<\/script>/gi, '<\\/script>');
-    const safeMermaidJs = mermaidJs.replace(/<\/script>/gi, '<\\/script>');
-    const safeVizJs = vizJs.replace(/<\/script>/gi, '<\\/script>');
-    template = template.replace('%%MARKED_JS%%', () => safeMarkedJs);
-    template = template.replace('%%MERMAID_JS%%', () => safeMermaidJs);
-    template = template.replace('%%VIZ_JS%%', () => safeVizJs);
 
     // Inline renderer.js — escape </script> to prevent early tag closure.
     const safeRendererJs = rendererJs.replace(/<\/script>/gi, '<\\/script>');
@@ -121,29 +116,47 @@ function findLeanFiles(dir: string): string[] {
 }
 
 /**
- * Export a single .lean file to the output directory,
- * preserving the relative path from sourceRoot.
- * If sourceRoot is undefined, the file is placed directly in outputDir.
+ * Export a single .lean file.
+ * - If sourceRoot is undefined (single-file mode): creates FileName/ directory
+ *   containing index.html + _libs/.
+ * - If sourceRoot is provided (batch mode): places HTML in the appropriate
+ *   relative path under outputDir. libsRoot is the dir that contains _libs/.
  */
 async function exportSingleFile(
     extensionUri: vscode.Uri,
     leanFilePath: string,
     outputDir: string,
-    sourceRoot?: string
+    sourceRoot?: string,
+    libsRoot?: string
 ): Promise<string> {
     const leanSource = fs.readFileSync(leanFilePath, 'utf8');
-    const html = buildHtml(extensionUri, leanSource);
 
-    let targetDir = outputDir;
+    let targetDir: string;
+    let libsRelPath = './_libs';
+
     if (sourceRoot) {
-        // Preserve directory structure relative to sourceRoot
+        // Batch mode: preserve directory structure relative to sourceRoot
         const relDir = path.relative(sourceRoot, path.dirname(leanFilePath));
         targetDir = path.join(outputDir, relDir);
+
+        // Compute relative path from targetDir to _libs/ (which is in libsRoot)
+        if (libsRoot) {
+            const relToLibs = path.relative(targetDir, path.join(libsRoot, '_libs'));
+            libsRelPath = relToLibs.split(path.sep).join('/');
+        }
+    } else {
+        // Single-file mode: create FileName/ directory
+        const dirName = path.basename(leanFilePath, '.lean');
+        targetDir = path.join(outputDir, dirName);
+        // Copy _libs/ into this directory
+        fs.mkdirSync(targetDir, { recursive: true });
+        copyLibs(extensionUri, targetDir);
     }
 
+    const html = buildHtml(extensionUri, leanSource, libsRelPath);
     fs.mkdirSync(targetDir, { recursive: true });
 
-    const htmlFileName = toHtmlFileName(leanFilePath);
+    const htmlFileName = sourceRoot ? toHtmlFileName(leanFilePath) : 'index.html';
     const outputPath = uniqueOutputPath(targetDir, htmlFileName);
     fs.writeFileSync(outputPath, html, 'utf8');
     return outputPath;
@@ -204,15 +217,14 @@ export async function runHtmlExport(
         if (!outputDirResult || outputDirResult.length === 0) return;
         const outputDir = outputDirResult[0].fsPath;
 
-        const htmlFileName = toHtmlFileName(leanFilePath);
-        const outputPath = path.join(outputDir, htmlFileName);
-        const willRename = fs.existsSync(outputPath);
+        const dirName = path.basename(leanFilePath, '.lean');
+        const exportDir = path.join(outputDir, dirName);
 
         // --- Confirmation ---
         const confirmMsg = [
             `Source:  ${leanFilePath}`,
-            `Output:  ${outputDir}`,
-            `File:    ${htmlFileName}${willRename ? '  (will be renamed to avoid overwrite)' : ''}`
+            `Output:  ${exportDir}/`,
+            `         index.html + _libs/`
         ].join('\n');
 
         const confirmed = await vscode.window.showInformationMessage(
@@ -225,7 +237,7 @@ export async function runHtmlExport(
         try {
             const finalPath = await exportSingleFile(extensionUri, leanFilePath, outputDir);
             vscode.window.showInformationMessage(
-                `HTML Export complete: ${path.basename(finalPath)}`,
+                `HTML Export complete: ${dirName}/index.html`,
                 'Open in Browser'
             ).then(sel => {
                 if (sel === 'Open in Browser') {
@@ -272,9 +284,11 @@ export async function runHtmlExport(
         if (!outputDirResult || outputDirResult.length === 0) return;
         const outputDir = outputDirResult[0].fsPath;
 
-        // --- Confirmation ---
-        // Show a preview of the directory structure to be created
+        // Batch structure: outputDir/SourceDirName/_libs/ + Contents/...
         const sourceDirName = path.basename(sourceDir);
+        const batchRoot = path.join(outputDir, sourceDirName);
+
+        // --- Confirmation ---
         const previewLines: string[] = [];
         const maxPreview = 10;
         for (let i = 0; i < Math.min(leanFiles.length, maxPreview); i++) {
@@ -282,8 +296,8 @@ export async function runHtmlExport(
             const relDir = path.dirname(rel);
             const htmlName = toHtmlFileName(leanFiles[i]);
             const outRel = relDir === '.'
-                ? path.join(sourceDirName, htmlName)
-                : path.join(sourceDirName, relDir, htmlName);
+                ? path.join('Contents', htmlName)
+                : path.join('Contents', relDir, htmlName);
             previewLines.push(`  ${outRel}`);
         }
         if (leanFiles.length > maxPreview) {
@@ -291,11 +305,12 @@ export async function runHtmlExport(
         }
 
         const confirmMsg = [
-            `Source directory:  ${sourceDir}`,
-            `Output directory:  ${outputDir}`,
-            `Files to export:   ${leanFiles.length} .lean file(s)`,
+            `Source:   ${sourceDir}`,
+            `Output:   ${batchRoot}/`,
+            `Files:    ${leanFiles.length} .lean file(s)`,
             ``,
-            `Directory structure will be preserved:`,
+            `Structure:`,
+            `  _libs/`,
             ...previewLines
         ].join('\n');
 
@@ -314,6 +329,12 @@ export async function runHtmlExport(
                 cancellable: false
             },
             async (progress) => {
+                // Create batch root and copy _libs/
+                fs.mkdirSync(batchRoot, { recursive: true });
+                copyLibs(extensionUri, batchRoot);
+
+                // Export HTMLs into Contents/ subdirectory
+                const contentsDir = path.join(batchRoot, 'Contents');
                 let exported = 0;
                 let failed = 0;
                 for (const leanFilePath of leanFiles) {
@@ -323,9 +344,7 @@ export async function runHtmlExport(
                         increment: 100 / leanFiles.length
                     });
                     try {
-                        // Use parent of sourceDir as root so that sourceDir itself
-                        // becomes the top-level folder inside outputDir.
-                        await exportSingleFile(extensionUri, leanFilePath, outputDir, path.dirname(sourceDir));
+                        await exportSingleFile(extensionUri, leanFilePath, contentsDir, sourceDir, batchRoot);
                         exported++;
                     } catch (e) {
                         console.error(`HTML Export skip: ${leanFilePath}`, e);
@@ -334,8 +353,8 @@ export async function runHtmlExport(
                 }
 
                 const msg = failed === 0
-                    ? `HTML Export complete: ${exported} file(s) exported to ${outputDir}`
-                    : `HTML Export done: ${exported} exported, ${failed} failed. Output: ${outputDir}`;
+                    ? `HTML Export complete: ${exported} file(s) → ${batchRoot}`
+                    : `HTML Export done: ${exported} exported, ${failed} failed → ${batchRoot}`;
                 vscode.window.showInformationMessage(msg);
             }
         );
