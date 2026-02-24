@@ -77,10 +77,12 @@ export class NotebookPanel {
         const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.Active;
         const scrollLine = topLine ?? 0;
 
-        // Same file already open — nothing to do
+        // Same file — reveal and re-render to reflect edits
         if (NotebookPanel.currentPanel &&
             NotebookPanel.currentPanel._document?.uri.toString() === document.uri.toString()) {
             NotebookPanel.currentPanel._panel.reveal(column);
+            NotebookPanel.currentPanel._document = document;
+            NotebookPanel.currentPanel._update();
             return;
         }
 
