@@ -4,10 +4,19 @@ import { generateBlockId } from './utils/hashing';
 import { splitLeanDocComments, expandCommentBlock } from './leanCommentParser';
 import { leanLspManager } from './leanLspClient';
 
-export type NotebookBlock = (ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock) & { id: string };
+export type NotebookBlock = (ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock | GraphvizBlock) & { id: string };
 
 export interface MermaidBlock {
     type: 'mermaid';
+    source: string;
+    range: {
+        startLine: number;
+        endLine: number;
+    };
+}
+
+export interface GraphvizBlock {
+    type: 'graphviz';
     source: string;
     range: {
         startLine: number;
@@ -76,13 +85,13 @@ export async function parseLeanFileWithLSP(
     const expandedLex = lex.flatMap(b => expandCommentBlock(b));
     console.log(`[Notebook Parser] After mermaid expansion: ${expandedLex.length} blocks`);
 
-    // Debug: log mermaid blocks
-    const mermaidBlocks = expandedLex.filter(b => b.type === 'mermaid');
-    if (mermaidBlocks.length > 0) {
-        console.log(`[Notebook Parser] Found ${mermaidBlocks.length} mermaid blocks`);
-        mermaidBlocks.forEach((b, i) => {
-            if (b.type === 'mermaid') {
-                console.log(`[Notebook Parser] Mermaid ${i}: ${b.source.substring(0, 50)}...`);
+    // Debug: log diagram blocks
+    const diagramBlocks = expandedLex.filter(b => b.type === 'mermaid' || b.type === 'graphviz');
+    if (diagramBlocks.length > 0) {
+        console.log(`[Notebook Parser] Found ${diagramBlocks.length} diagram blocks`);
+        diagramBlocks.forEach((b, i) => {
+            if (b.type === 'mermaid' || b.type === 'graphviz') {
+                console.log(`[Notebook Parser] ${b.type} ${i}: ${b.source.substring(0, 50)}...`);
             }
         });
     }
@@ -94,7 +103,7 @@ export async function parseLeanFileWithLSP(
         // Generate Stable ID
         // key = type + content
         // We accumulate occurrences to distinguish identical blocks
-        const contentKey = b.type === 'code' || b.type === 'mermaid' ? b.source : b.content;
+        const contentKey = b.type === 'code' || b.type === 'mermaid' || b.type === 'graphviz' ? b.source : b.content;
         const key = `${b.type}:${contentKey}`;
         const count = occurrenceMap.get(key) || 0;
         occurrenceMap.set(key, count + 1);
@@ -109,6 +118,9 @@ export async function parseLeanFileWithLSP(
         }
         if (b.type === 'mermaid') {
             return { type: 'mermaid', source: b.source, range: b.range, id };
+        }
+        if (b.type === 'graphviz') {
+            return { type: 'graphviz', source: b.source, range: b.range, id };
         }
         return { type: 'doc-comment', content: b.content, range: b.range, id };
     });

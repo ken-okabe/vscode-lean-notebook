@@ -4,7 +4,8 @@ export type LeanLexBlock =
   | { type: 'code'; source: string; range: { startLine: number; endLine: number } }
   | { type: 'module-doc'; content: string; range: { startLine: number; endLine: number } }
   | { type: 'doc-comment'; content: string; range: { startLine: number; endLine: number } }
-  | { type: 'mermaid'; source: string; range: { startLine: number; endLine: number } };
+  | { type: 'mermaid'; source: string; range: { startLine: number; endLine: number } }
+  | { type: 'graphviz'; source: string; range: { startLine: number; endLine: number } };
 
 /**
  * Lexically split a Lean file into:
@@ -67,6 +68,7 @@ export function splitLeanDocComments(text: string, document?: vscode.TextDocumen
   return blocks.filter(b => {
     if (b.type === 'code') return b.source.trim().length > 0;
     if (b.type === 'mermaid') return b.source.trim().length > 0;
+    if (b.type === 'graphviz') return b.source.trim().length > 0;
     return b.content.trim().length > 0;
   });
 
@@ -167,38 +169,42 @@ function trimEmptyLines(code: string): string {
 }
 
 /**
- * Split a markdown comment into sub-blocks, extracting mermaid code blocks.
+ * Split a markdown comment into sub-blocks, extracting diagram code blocks
+ * (mermaid and graphviz/dot).
  * Returns an array of { type, content/source } objects.
  */
 type SubBlock =
   | { type: 'text'; content: string }
-  | { type: 'mermaid'; source: string };
+  | { type: 'mermaid'; source: string }
+  | { type: 'graphviz'; source: string };
 
-function splitMermaidBlocks(content: string): SubBlock[] {
+function splitDiagramBlocks(content: string): SubBlock[] {
   const result: SubBlock[] = [];
-  // Match fenced code blocks: ```mermaid\n...code...\n```
-  const codeBlockRegex = /^```mermaid\s*\n([\s\S]*?)^```\s*$/gm;
+  // Match fenced code blocks: ```mermaid, ```graphviz, or ```dot
+  const codeBlockRegex = /^```(mermaid|graphviz|dot)\s*\n([\s\S]*?)^```\s*$/gm;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = codeBlockRegex.exec(content)) !== null) {
-    // Text before this mermaid block
+    // Text before this diagram block
     const textContent = content.substring(lastIndex, match.index);
     if (textContent.trim().length > 0) {
       result.push({ type: 'text', content: textContent.trim() });
     }
 
-    // The mermaid block itself
-    const mermaidSource = match[1];
-    if (mermaidSource.trim().length > 0) {
-      result.push({ type: 'mermaid', source: trimEmptyLines(mermaidSource) });
+    // The diagram block itself
+    const lang = match[1]; // 'mermaid', 'graphviz', or 'dot'
+    const diagramSource = match[2];
+    if (diagramSource.trim().length > 0) {
+      const blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
+      result.push({ type: blockType, source: trimEmptyLines(diagramSource) } as SubBlock);
     }
 
     lastIndex = codeBlockRegex.lastIndex;
   }
 
-  // Remaining text after last mermaid block
+  // Remaining text after last diagram block
   if (lastIndex < content.length) {
     const remaining = content.substring(lastIndex);
     if (remaining.trim().length > 0) {
@@ -206,7 +212,7 @@ function splitMermaidBlocks(content: string): SubBlock[] {
     }
   }
 
-  // If no mermaid blocks found, return original content
+  // If no diagram blocks found, return original content
   if (result.length === 0 && content.trim().length > 0) {
     result.push({ type: 'text', content: content.trim() });
   }
@@ -215,14 +221,15 @@ function splitMermaidBlocks(content: string): SubBlock[] {
 }
 
 /**
- * Expand a comment block into multiple blocks if it contains mermaid diagrams.
+ * Expand a comment block into multiple blocks if it contains diagram blocks
+ * (mermaid or graphviz/dot).
  */
 export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
   if (block.type !== 'module-doc' && block.type !== 'doc-comment') {
     return [block];
   }
 
-  const subBlocks = splitMermaidBlocks(block.content);
+  const subBlocks = splitDiagramBlocks(block.content);
 
   // If only one text block, return original
   if (subBlocks.length === 1 && subBlocks[0].type === 'text') {
@@ -240,10 +247,10 @@ export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
       });
     } else {
       result.push({
-        type: 'mermaid',
+        type: sub.type, // 'mermaid' or 'graphviz'
         source: sub.source,
         range: block.range // Use same range (approximate)
-      });
+      } as LeanLexBlock);
     }
   }
 
