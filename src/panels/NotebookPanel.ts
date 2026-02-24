@@ -16,6 +16,11 @@ export class NotebookPanel {
     private _renderingCompletePromise: ((value: void) => void) | null = null;
     private _pendingScrollLine: number | null = null;
 
+    // Pull-model state: _trySend() is the ONLY gate for postMessage('update').
+    // It sends if and only if BOTH _webviewIsReady AND _currentBlocks are set.
+    private _webviewIsReady = false;
+    private _currentBlocks: any[] | null = null;
+
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, document: vscode.TextDocument) {
         this._panel = panel;
         this._extensionUri = extensionUri;
@@ -27,14 +32,18 @@ export class NotebookPanel {
         // Listen for messages from webview
         this._panel.webview.onDidReceiveMessage(
             message => {
-                if (message.command === 'scrollPosition') {
+                if (message.command === 'ready') {
+                    // Pull-model: WebView signals it's ready to receive data.
+                    // Set the flag and attempt to send any blocks we already have.
+                    console.log('[NotebookPanel] WebView ready signal received');
+                    this._webviewIsReady = true;
+                    this._trySend();
+                } else if (message.command === 'scrollPosition') {
                     this._lastScrollPosition = message.percentage;
                     if (this._scrollPositionPromise) {
                         this._scrollPositionPromise(message.percentage);
                         this._scrollPositionPromise = null;
                     }
-                    // Don't log every second to avoid spam
-                    // console.log(`[NotebookPanel] Received scroll position: ${message.percentage}`);
                 } else if (message.command === 'renderingComplete') {
                     console.log('[NotebookPanel] Rendering complete notification received');
                     if (this._renderingCompletePromise) {
@@ -58,73 +67,42 @@ export class NotebookPanel {
         );
 
         // Listen for when the panel is disposed
-        // This happens when the user closes the panel or when the panel is closed programmatically
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
-        // Update the content based on view state changes
-        this._panel.onDidChangeViewState(
-            e => {
-                if (this._panel.visible) {
-                    this._update();
-                }
-            },
-            null,
-            this._disposables
-        );
-
-        // Initial update
+        // Initial update — _update() stores blocks, _trySend() sends when ready
         this._update();
     }
 
     public static createOrShow(extensionUri: vscode.Uri, document: vscode.TextDocument, topLine?: number) {
         const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.Active;
+        const scrollLine = topLine ?? 0;
 
-        // Use provided topLine or try to get from active editor
-        let scrollLine = topLine ?? 0;
-        if (scrollLine === undefined || scrollLine === null) {
-            const editor = vscode.window.activeTextEditor;
-            if (editor && editor.document.uri.toString() === document.uri.toString()) {
-                scrollLine = editor.visibleRanges[0]?.start.line || 0;
-                console.log(`[createOrShow] Got scroll from active editor: line ${scrollLine}`);
-            } else {
-                scrollLine = 0;
-                console.log(`[createOrShow] No editor or URI mismatch, using line 0`);
-            }
-        } else {
-            console.log(`[createOrShow] Using provided scroll position: line ${scrollLine}`);
-        }
-
-        // If we already have a panel, show it.
-        if (NotebookPanel.currentPanel) {
+        // Same file already open — nothing to do
+        if (NotebookPanel.currentPanel &&
+            NotebookPanel.currentPanel._document?.uri.toString() === document.uri.toString()) {
             NotebookPanel.currentPanel._panel.reveal(column);
-            NotebookPanel.currentPanel._document = document;
-
-            // Store the pending scroll line
-            NotebookPanel.currentPanel._pendingScrollLine = scrollLine;
-            console.log(`[createOrShow] Stored pending scroll to line ${scrollLine}`);
-
-            // Update - rendering complete handler will execute the scroll
-            NotebookPanel.currentPanel._update();
-
             return;
         }
 
-        // Otherwise, create a new panel.
+        // Different file — destroy old panel completely
+        if (NotebookPanel.currentPanel) {
+            NotebookPanel.currentPanel.dispose();
+        }
+
+        // Create a brand new panel
         const panel = vscode.window.createWebviewPanel(
             'leanNotebook',
             'Lean Notebook',
             column,
             {
                 enableScripts: true,
+                retainContextWhenHidden: true,
                 localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')]
             }
         );
 
         NotebookPanel.currentPanel = new NotebookPanel(panel, extensionUri, document);
-
-        // Store the pending scroll line - rendering complete handler will execute it
         NotebookPanel.currentPanel._pendingScrollLine = scrollLine;
-        console.log(`[createOrShow] Stored initial scroll to line ${scrollLine} for new panel`);
     }
 
     public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, document: vscode.TextDocument) {
@@ -161,68 +139,105 @@ export class NotebookPanel {
         }
     }
 
+    /**
+     * Called from extension.ts when the document changes (file switch or diagnostic update).
+     * - Different file: full re-parse (1 render).
+     * - Same file: lightweight diagnostic refresh (1 render, no re-parse).
+     * - During active parse: ignored entirely.
+     */
     public updateDocument(document: vscode.TextDocument) {
+        const sameFile = this._document?.uri.toString() === document.uri.toString();
+
+        // During active parse, ignore ALL update requests for the same file
+        if (this._isUpdating && sameFile) {
+            return;
+        }
+
         this._document = document;
-        this._update();
+
+        if (sameFile && this._currentBlocks !== null) {
+            // Same file, blocks already exist — lightweight diagnostic refresh only
+            this._refreshDiagnostics();
+        } else {
+            // Different file — full parse
+            this._update();
+        }
     }
 
     private _updateGeneration = 0;
+    private _isUpdating = false;
+    private _diagnosticTimer: ReturnType<typeof setTimeout> | null = null;
 
+    private _trySend() {
+        if (!this._webviewIsReady || this._currentBlocks === null) {
+            return;
+        }
+        this._panel.webview.postMessage({
+            command: 'update',
+            blocks: this._currentBlocks,
+            reset: true
+        });
+    }
+
+    /**
+     * Lightweight diagnostic refresh: re-attach #eval results to existing blocks
+     * and send once. NO re-parse. Debounced to 500ms to coalesce burst events.
+     */
+    private _refreshDiagnostics() {
+        if (this._diagnosticTimer) {
+            clearTimeout(this._diagnosticTimer);
+        }
+        this._diagnosticTimer = setTimeout(async () => {
+            this._diagnosticTimer = null;
+            if (!this._document || !this._currentBlocks) return;
+
+            // Dynamic import to avoid circular dependency
+            const { attachDiagnostics } = await import('../lspParser');
+            // Re-attach diagnostics to existing blocks (mutates in place)
+            await attachDiagnostics(this._document, this._currentBlocks);
+            this._trySend();
+        }, 500);
+    }
+
+    /**
+     * Full update: clear immediately, parse to completion, send once.
+     * 2 postMessages total: clear (instant) + final blocks (after parse).
+     */
     private async _update() {
         if (!this._document) { return; }
-        const webview = this._panel.webview;
 
-        // Increment generation to invalidate previous pending updates
+        // Invalidate previous pending updates
         const currentGen = ++this._updateGeneration;
+        this._isUpdating = true;
+        this._currentBlocks = null;
 
         try {
-            // Parse the document based on file type
-            const isMarkdown = this._document.languageId === 'markdown' || this._document.fileName.endsWith('.md');
+            const isMarkdown = this._document.languageId === 'markdown' ||
+                this._document.fileName.endsWith('.md');
 
             let blocks: any[];
 
             if (isMarkdown) {
-                // Parse as Markdown
-                const text = this._document.getText();
-                blocks = parseMarkdownFile(text);
-
-                if (currentGen !== this._updateGeneration) return;
-                console.log("NotebookPanel: Parsed Markdown with " + blocks.length + " blocks.");
-                webview.postMessage({ command: 'update', blocks: blocks, reset: true });
+                blocks = parseMarkdownFile(this._document.getText());
             } else {
-                // Parse as Lean:
-                // - structural split is a textual scan (see `splitLeanDocComments`)
-                // - #eval results are attached via Lean server diagnostics
-                console.log("NotebookPanel: Parsing Lean file (lexical split + diagnostics)...");
-
-                // Use the onUpdate callback to stream initial blocks immediately
-                blocks = await parseLeanFileWithLSP(this._document, (partialBlocks) => {
-                    if (currentGen !== this._updateGeneration) return;
-                    console.log(`[NotebookPanel] Received partial update with ${partialBlocks.length} blocks`);
-                    // For partial updates, we might NOT want to reset if we already sent the first chunk?
-                    // Actually, the first chunk defined the "new file" state. 
-                    // Let's say: First partial update = reset: true. Subsequent = reset: false?
-                    // But here we rely on the fact that we are overwriting the whole state anyway.
-                    // Ideally, we send 'reset: true' only on the very first message for this document.
-                    // But since we send the *complete* list of blocks every time in 'partialBlocks', 
-                    // 'reset: true' is safe (it just clears the DOM cache).
-                    webview.postMessage({ command: 'update', blocks: partialBlocks, reset: true });
-                });
-
-                if (currentGen !== this._updateGeneration) return;
-                console.log("NotebookPanel: Parsed " + blocks.length + " blocks (final).");
-                webview.postMessage({ command: 'update', blocks: blocks, reset: true });
-
-                // Note: Diagnostics are already attached by the notebook parser
+                blocks = await parseLeanFileWithLSP(this._document);
             }
+
+            if (currentGen !== this._updateGeneration) return;
+
+            this._currentBlocks = blocks;
+            this._trySend();
         } catch (e) {
             if (currentGen !== this._updateGeneration) return;
             console.error("Error in _update:", e);
-            // No fallback: if LSP parsing fails, send an empty update.
-            webview.postMessage({ command: 'update', blocks: [], reset: true });
+            this._currentBlocks = [];
+            this._trySend();
+        } finally {
+            if (currentGen === this._updateGeneration) {
+                this._isUpdating = false;
+            }
         }
 
-        // Update Title
         const fileName = this._document.fileName.split(/[/\\]/).pop() || 'Notebook';
         this._panel.title = fileName;
     }
@@ -281,7 +296,7 @@ export class NotebookPanel {
             </script>
             <script id="MathJax-script" async src="${mathJaxCdnUrl}"></script>
             <script src="${mermaidUri}"></script>
-            <script src="${vizUri}"></script>
+            <script src="${vizUri}" async></script>
 
             <title>Notebook Preview</title>
         </head>

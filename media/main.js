@@ -164,13 +164,13 @@ try {
         setTimeout(async () => {
             if (signal.aborted) return;
 
-            // タスク5: Markdown 内の ```lean コードフェンスを hlLean() でハイライト
+            // Highlight ```lean code fences inside Markdown with hlLean()
             dom.querySelectorAll('pre code').forEach(el => {
                 if (signal.aborted) return;
                 const isLean = el.classList.contains('language-lean') ||
                     el.classList.contains('language-lean4');
                 if (isLean) {
-                    // hlLean は HTML エスケープ済み文字列を返す → innerHTML に直接セット
+                    // hlLean returns pre-escaped HTML string → set via innerHTML
                     el.innerHTML = hlLean(el.textContent || '');
                 }
             });
@@ -215,9 +215,9 @@ try {
 
         const displaySource = resultLines.join('\n');
 
-        // タスク3: ヘッダーバー追加
+        // Header bar
         const header = div({ class: "block-code-header" }, "lean4");
-        // タスク5: 独自 hlLean() でハイライト（Prism 不使用）
+        // Syntax highlighting via hlLean() (no Prism dependency)
         const preEl = pre({ class: "lean-source" });
         preEl.innerHTML = hlLean(displaySource);
         const dom = div({ class: "block-code" }, header, preEl);
@@ -257,21 +257,8 @@ try {
         const message = event.data;
 
         if (message.command === 'update') {
-            const reset = message.reset;
-            if (reset) {
-                // "Zero-Base" requires strict clear on reset.
-                // But App logic handles clearing stale IDs automatically.
-                // If reset is true, strictly speaking we might want to drop *all* cache first
-                // to prevent accidental ID collision between files (though extremely unlikely with hash).
-                // Let's implement strict clear for safety.
-                blocksState.val = [];
-                // We force a microtask wait before setting new blocks? 
-                // No, just set empty then set new might cause flash.
-                // Actually, if we just set new blocks, the reconciler sees disjoint IDs and replaces everything.
-                // So we don't need manual clear unless IDs collide.
-            }
-
-            blocksState.val = message.blocks;
+            // Single assignment: empty array = clear, populated array = render.
+            blocksState.val = message.blocks || [];
         } else if (message.command === 'scrollToLine') {
             scrollToLine(message.line);
         }
@@ -291,10 +278,18 @@ try {
     // App() manages #notebook directly via van.derive — no return value needed.
     App();
 
+    // Signal to extension host that main.js is ready to receive messages.
+    // This completes the handshake — _update() in NotebookPanel.ts waits
+    // for this signal before posting 'update' messages.
+    if (vscode) {
+        vscode.postMessage({ command: 'ready' });
+        console.log('[main.js] Sent ready signal');
+    }
+
     // ================================================================
-    // タスク4: TOC（目次）自動生成
-    // ノートブック内の h1/h2/h3 を走査してサイドバーにリンクを追加する。
-    // DOM が更新されるたびに再生成する（MutationObserver）。
+    // Auto-generate Table of Contents (TOC)
+    // Scans h1/h2/h3 inside #notebook and adds links to the sidebar.
+    // Regenerated on every DOM mutation via MutationObserver.
     // ================================================================
     function buildToc() {
         const toc = document.getElementById('toc');
@@ -304,12 +299,15 @@ try {
         if (!notebook) return;
 
         const headings = notebook.querySelectorAll('h1, h2, h3');
-        if (headings.length === 0) return;
+        if (headings.length === 0) {
+            toc.innerHTML = '';
+            return;
+        }
 
         let tocHtml = '';
         let headingIdx = 0;
         headings.forEach(h => {
-            // ID が未設定なら付与する
+            // Assign an ID if missing
             if (!h.id) {
                 h.id = 'toc-h-' + headingIdx++;
             }
@@ -322,9 +320,9 @@ try {
         toc.innerHTML = tocHtml;
     }
 
-    // DOM 変化を監視して TOC を再構築
+    // Observe DOM mutations to rebuild TOC
     const tocObserver = new MutationObserver(() => {
-        // debounce: 連続更新時に 1 回だけ実行
+        // Debounce: run once per burst of updates
         clearTimeout(tocObserver._timer);
         tocObserver._timer = setTimeout(buildToc, 200);
     });

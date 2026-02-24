@@ -72,8 +72,7 @@ export interface CodeBlock {
  *   results such as `#eval` outputs.
  */
 export async function parseLeanFileWithLSP(
-    document: vscode.TextDocument,
-    onUpdate?: (blocks: NotebookBlock[]) => void
+    document: vscode.TextDocument
 ): Promise<NotebookBlock[]> {
     console.log('[Notebook Parser] Starting parse for:', document.fileName);
 
@@ -125,11 +124,6 @@ export async function parseLeanFileWithLSP(
         return { type: 'doc-comment', content: b.content, range: b.range, id };
     });
 
-    // IMMEDIATE UPDATE: Send preliminary blocks (no execution results yet)
-    if (onUpdate) {
-        console.log('[Notebook Parser] Triggering immediate update with lexical blocks');
-        onUpdate([...blocks]); // Send a copy
-    }
 
     // Phase 2 (LSP/Lean server): Start the LSP client and ensure document is opened.
     // This triggers elaboration and diagnostics (including #eval results).
@@ -161,7 +155,7 @@ export async function parseLeanFileWithLSP(
  * - Information diagnostics (e.g. #eval) → rendered as "-- Evaluated: ..."
  * - theorem/lemma/example declarations with no errors → rendered as "-- ✓"
  */
-async function attachDiagnostics(
+export async function attachDiagnostics(
     document: vscode.TextDocument,
     blocks: NotebookBlock[]
 ): Promise<void> {

@@ -217,11 +217,25 @@ let _vizInstancePromise = null;
 function getVizInstance() {
     if (_vizInstance) return Promise.resolve(_vizInstance);
     if (_vizInstancePromise) return _vizInstancePromise;
-    if (typeof Viz === 'undefined') return Promise.reject(new Error('Viz.js not loaded'));
-    _vizInstancePromise = Viz.instance().then(viz => {
-        _vizInstance = viz;
-        _vizInstancePromise = null;
-        return viz;
+    _vizInstancePromise = new Promise((resolve, reject) => {
+        // Viz.js may be loaded async; poll until it's available (up to 10s).
+        let elapsed = 0;
+        const interval = 100;
+        const maxWait = 10000;
+        function check() {
+            if (typeof Viz !== 'undefined') {
+                Viz.instance().then(viz => {
+                    _vizInstance = viz;
+                    resolve(viz);
+                }).catch(reject);
+            } else if (elapsed >= maxWait) {
+                reject(new Error('Viz.js not loaded after ' + maxWait + 'ms'));
+            } else {
+                elapsed += interval;
+                setTimeout(check, interval);
+            }
+        }
+        check();
     });
     return _vizInstancePromise;
 }

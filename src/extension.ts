@@ -6,19 +6,20 @@ import { runHtmlExport } from './htmlExporter';
 export function activate(context: vscode.ExtensionContext) {
     // Store scroll positions for each document (line number for source)
     const sourceScrollPositions = new Map<string, number>();
-    
+
     // Interval for tracking source editor scroll position
     let sourceScrollTracker: NodeJS.Timeout | undefined = undefined;
-    
+
     // Track the URI of the document currently being shown in preview
     let currentPreviewDocUri: string | undefined = undefined;
 
     // Create Status Bar Items
-    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    // Right alignment: lower priority = closer to window edge (rightmost)
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
     context.subscriptions.push(statusBarItem);
 
-    // HTML Export status bar button
-    const exportStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    // HTML Export status bar button (to the left of Preview)
+    const exportStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     exportStatusBarItem.text = '$(export) HTML Export';
     exportStatusBarItem.tooltip = 'LeanNotebook: Export as HTML file(s)';
     exportStatusBarItem.command = 'leannotebook.htmlExport';
@@ -27,16 +28,16 @@ export function activate(context: vscode.ExtensionContext) {
     // Function to check if a document is Lean or Markdown
     const isLeanOrMarkdown = (doc: vscode.TextDocument | undefined): boolean => {
         if (!doc) return false;
-        return doc.languageId === 'lean4' || 
-               doc.fileName.endsWith('.lean') ||
-               doc.languageId === 'markdown' || 
-               doc.fileName.endsWith('.md');
+        return doc.languageId === 'lean4' ||
+            doc.fileName.endsWith('.lean') ||
+            doc.languageId === 'markdown' ||
+            doc.fileName.endsWith('.md');
     };
 
     // Function to update status bar based on current state
     const updateStatusBar = () => {
         const editor = vscode.window.activeTextEditor;
-        
+
         if (editor && isLeanOrMarkdown(editor.document)) {
             // We're in source editor - show "Open Preview" button
             statusBarItem.text = '$(preview) Open Preview';
@@ -63,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (sourceScrollTracker) {
             return; // Already tracking
         }
-        
+
         console.log('[SourceScroll] Starting source scroll tracking');
         sourceScrollTracker = setInterval(() => {
             const editor = vscode.window.activeTextEditor;
@@ -90,10 +91,10 @@ export function activate(context: vscode.ExtensionContext) {
             const uri = editor.document.uri.toString();
             const topLine = sourceScrollPositions.get(uri) || editor.visibleRanges[0]?.start.line || 0;
             console.log(`[openPreview] Opening preview for ${uri} at line ${topLine}`);
-            
+
             currentPreviewDocUri = uri;
             stopSourceScrollTracking();
-            
+
             NotebookPanel.createOrShow(context.extensionUri, editor.document, topLine);
             updateStatusBar();
         } else {
@@ -109,19 +110,19 @@ export function activate(context: vscode.ExtensionContext) {
 
                 const doc = NotebookPanel.currentPanel._document;
                 const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
-                
+
                 const totalLines = doc.lineCount;
                 const targetLine = Math.floor(scrollPercentage * totalLines);
-                
+
                 const position = new vscode.Position(targetLine, 0);
                 editor.selection = new vscode.Selection(position, position);
                 editor.revealRange(
                     new vscode.Range(position, position),
                     vscode.TextEditorRevealType.InCenter
                 );
-                
+
                 console.log(`[ShowSource] Scrolled to line ${targetLine}`);
-                
+
                 startSourceScrollTracking();
                 updateStatusBar();
             } catch (e) {
@@ -132,7 +133,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // HTML Export command
     const htmlExportCommand = vscode.commands.registerCommand('leannotebook.htmlExport', () => {
-        const doc = NotebookPanel.currentPanel?._document 
+        const doc = NotebookPanel.currentPanel?._document
             ?? vscode.window.activeTextEditor?.document;
         runHtmlExport(context.extensionUri, doc);
     });
@@ -156,24 +157,24 @@ export function activate(context: vscode.ExtensionContext) {
     // Auto-open preview for Lean and Markdown files
     const handleEditorChange = (editor: vscode.TextEditor | undefined) => {
         console.log(`[handleEditorChange] Editor: ${editor?.document.fileName || 'undefined'}, languageId: ${editor?.document.languageId || 'N/A'}`);
-        
+
         if (editor && isLeanOrMarkdown(editor.document)) {
             const uri = editor.document.uri.toString();
             console.log(`[handleEditorChange] Lean/Markdown file: ${uri}`);
-            
+
             // Check if we need to open/update preview
-            const needsPreview = !NotebookPanel.currentPanel || 
-                                NotebookPanel.currentPanel._document?.uri.toString() !== uri;
-            
+            const needsPreview = !NotebookPanel.currentPanel ||
+                NotebookPanel.currentPanel._document?.uri.toString() !== uri;
+
             console.log(`[handleEditorChange] Current panel exists: ${!!NotebookPanel.currentPanel}, Needs preview: ${needsPreview}`);
-            
+
             if (needsPreview) {
                 console.log(`[handleEditorChange] Opening preview for: ${uri}`);
                 currentPreviewDocUri = uri;
-                
+
                 const topLine = editor.visibleRanges[0]?.start.line || 0;
                 sourceScrollPositions.set(uri, topLine);
-                
+
                 startSourceScrollTracking();
                 NotebookPanel.createOrShow(context.extensionUri, editor.document, topLine);
             } else {
@@ -184,7 +185,7 @@ export function activate(context: vscode.ExtensionContext) {
             console.log(`[handleEditorChange] Not a Lean/Markdown file, stopping tracking`);
             stopSourceScrollTracking();
         }
-        
+
         updateStatusBar();
     };
 

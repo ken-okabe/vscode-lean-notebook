@@ -1,6 +1,6 @@
 /* style.css — LeanNotebook VSCode Extension
-   静的 HTML ビューアと完全に同一の CSS。
-   VSCode ユーザーテーマは上書きし、Lean ブランドを優先する。
+   Identical CSS for both the static HTML viewer and the Extension WebView.
+   Overrides VSCode user themes to prioritize the Lean brand.
 */
 
 @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
@@ -64,12 +64,12 @@ body {
 }
 
 /* ================================================================
-   全体レイアウト: サイドバー + メインコンテンツ
-   Extension WebView 用: #layout
-   HTML エクスポート用: #app (topbar + sidebar + notebook)
+   Overall Layout: Sidebar + Main Content
+   Extension WebView: #layout
+   HTML Export: #app (topbar + sidebar + notebook)
    ================================================================ */
 
-/* --- 共通ルートグリッド (#app) --- */
+/* --- Common root grid (#app) --- */
 #app {
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -214,7 +214,7 @@ body {
   }
 }
 
-/* ---- サイドバー ---- */
+/* ---- Sidebar ---- */
 #sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -270,14 +270,14 @@ body {
   font-size: 11.5px;
 }
 
-/* ---- メインコンテンツ ---- */
+/* ---- Main Content ---- */
 #notebook {
   min-width: 0;
   width: 100%;
 }
 
 /* ================================================================
-   Prose ブロック共通
+   Prose Blocks (shared)
    ================================================================ */
 .block-module-doc,
 .block-doc-comment {
@@ -288,7 +288,7 @@ body {
   margin-bottom: 10px;
 }
 
-/* --- module-doc: 白カード --- */
+/* --- module-doc: white card --- */
 .block-module-doc {
   padding: 32px 36px;
   background: var(--surface);
@@ -297,7 +297,7 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-/* --- doc-comment: 左ブルーボーダー --- */
+/* --- doc-comment: left blue border --- */
 .block-doc-comment {
   padding: 16px 20px;
   border-left: 3px solid var(--blue-light);
@@ -306,7 +306,7 @@ body {
 }
 
 /* ================================================================
-   Prose タイポグラフィ（共通）
+   Prose Typography (shared)
    ================================================================ */
 .block-module-doc h1,
 .block-doc-comment h1,
@@ -416,7 +416,7 @@ body {
   margin: 0;
 }
 
-/* インラインコード */
+/* Inline code */
 .block-module-doc code,
 .block-doc-comment code,
 .block-doc-comment code,
@@ -430,7 +430,7 @@ body {
   color: var(--blue-dark);
 }
 
-/* コードフェンス */
+/* Code fences */
 .block-module-doc pre,
 .block-doc-comment pre,
 .block-doc-comment pre,
@@ -458,7 +458,7 @@ body {
   font-size: inherit;
 }
 
-/* テーブル */
+/* Tables */
 .block-module-doc table,
 .block-doc-comment table,
 .block-doc-comment table,
@@ -498,7 +498,7 @@ body {
   background: #f0f5fd;
 }
 
-/* ブロッククォート */
+/* Blockquotes */
 .block-module-doc blockquote,
 .block-doc-comment blockquote,
 .block-doc-comment blockquote,
@@ -535,7 +535,7 @@ body {
 }
 
 /* ================================================================
-   コードブロック
+   Code Blocks
    ================================================================ */
 .block-code {
   margin-bottom: 10px;
@@ -581,7 +581,7 @@ body {
 }
 
 /* ================================================================
-   シンタックスハイライト
+   Syntax Highlighting
    ================================================================ */
 .hl-keyword {
   color: var(--hl-keyword);
@@ -614,7 +614,7 @@ body {
 }
 
 /* ================================================================
-   Mermaid ブロック
+   Mermaid Blocks
    ================================================================ */
 .block-mermaid {
   background: var(--surface);
@@ -639,7 +639,7 @@ body {
 }
 
 /* ================================================================
-   Graphviz (DOT) ブロック
+   Graphviz (DOT) Blocks
    ================================================================ */
 .block-graphviz {
   background: var(--surface);
@@ -700,7 +700,7 @@ mjx-container[display="true"] {
   border-radius: 2px;
 }
 
-/* 見出しのスクロールオフセット */
+/* Heading scroll offset */
 h1,
 h2,
 h3,
@@ -711,7 +711,7 @@ h6 {
 }
 
 /* ================================================================
-   スクロールバー
+   Scrollbar
    ================================================================ */
 ::-webkit-scrollbar {
   width: 6px;
@@ -728,7 +728,7 @@ h6 {
 }
 
 /* ================================================================
-   Lean LSP 出力（#eval / proof status）
+   Lean LSP Output (#eval / proof status)
    ================================================================ */
 .lean-output {
   border-top: 1px solid var(--border);

@@ -2,7 +2,7 @@
     "name": "leannotebook",
     "displayName": "LeanNotebook",
     "description": "Rich notebook interface for Lean 4 based on VanJS",
-    "version": "0.10.0",
+    "version": "0.99.0",
     "engines": {
         "vscode": "^1.80.0"
     },
