@@ -1,54 +1,71 @@
 # LeanNotebook — VS Code Extension
 
-Lean 4 source files (`.lean`) to interactive HTML notebook viewer and exporter.
+A VS Code extension that transforms Lean 4 source files (`.lean`) into richly rendered interactive notebooks with LaTeX math, Mermaid diagrams, and Graphviz visualizations. Designed for **Lean programmers** and **Literate Coding** authors.
 
-## Library Dependencies (`media/_libs/`)
+## Features
 
-All rendering libraries are stored locally in `media/_libs/` and used by both the Extension WebView and exported HTML. No CDN dependency at runtime.
+- **Live Preview**: Real-time rendered preview of `.lean` files as rich notebooks inside VS Code
+- **Literate Programming**: Module doc comments (`/--  --/`) and doc comments (`/--  -/`) rendered as Markdown with full math support
+- **LaTeX Math**: Inline `$...$` and display `$$...$$` math via MathJax 4
+- **Mermaid Diagrams**: Fenced ` ```mermaid ` blocks rendered as diagrams
+- **Graphviz**: Fenced ` ```graphviz ` blocks rendered as DOT graphs
+- **Lean Syntax Highlighting**: Code blocks highlighted with Lean-aware tokenizer
+- **HTML Export**: Export individual files or entire directories as standalone offline HTML
 
-| Library | Version | Size | Purpose |
-|---|---|---|---|
-| [MathJax](https://www.mathjax.org/) | **4.1.1** | 20MB | LaTeX math rendering |
-| [marked](https://marked.js.org/) | **17.0.3** | 42KB | Markdown → HTML |
-| [mermaid](https://mermaid.js.org/) | **11.12.3** | 2.8MB | Mermaid diagrams |
-| [@viz-js/viz](https://viz-js.com/) | **3.24.0** | 1.4MB | Graphviz DOT diagrams |
+## HTML Export
 
-## Rendering Guarantee — Single Source of Truth
+From the VS Code command palette or the **Export HTML** button:
 
-The Extension WebView and exported HTML use the **exact same library files** from `media/_libs/`, guaranteeing identical rendering.
-
-| Component | Extension WebView | Exported HTML |
-|---|---|---|
-| MathJax | `media/_libs/mathjax/tex-chtml.js` via `webviewUri` | `_libs/mathjax/tex-chtml.js` (copy) |
-| marked | `media/_libs/marked.min.js` via `webviewUri` | `_libs/marked.min.js` (copy) |
-| mermaid | `media/_libs/mermaid.min.js` via `webviewUri` | `_libs/mermaid.min.js` (copy) |
-| viz.js | `media/_libs/viz-standalone.js` via `webviewUri` | `_libs/viz-standalone.js` (copy) |
-| renderer.js | `media/renderer.js` via `webviewUri` | `media/renderer.js` inlined |
-| style.css | `media/style.css` via `<link>` | `media/style.css` inlined |
-| MathJax config | Extracted from `MATHJAX_CONFIG` in `renderer.js` | Same `MATHJAX_CONFIG` extraction |
-
-**Flow:**
-- **Extension:** `media/_libs/` → `webview.asWebviewUri()` → browser load
-- **Export:** `media/_libs/` → `copyLibs()` → output directory copy → browser load
-
-Same files, same versions, same config. Rendering output is identical and fully offline.
-
-## HTML Export Structure
-
-### Single file export
+### Single File Export
+Creates a self-contained directory:
 ```
 FileName/
-  index.html
-  _libs/          ← copied from media/_libs/
+  index.html          ← open in browser
+  _libs/              ← rendering libraries
 ```
 
-### Batch directory export
+### Directory Export
+Exports all `.lean` files with two output formats under one parent:
 ```
-SourceDirName/
-  _libs/          ← single copy at root
-  Contents/
-    Module1/
-      file1.html
-    Module2/
-      file2.html
+DirName/
+  DirName_Separate_HTML/
+    _libs/
+    Contents/
+      Module1/file1.html   ← individual HTML pages
+      Module2/file2.html
+
+  DirName_Lean_Viewer/
+    Viewer.html            ← Book Viewer app (open in browser)
+    _libs/
+    Contents/
+      Module1/file1.lean   ← original .lean source files
+      Module2/file2.lean
 ```
+
+**Separate HTML** — Each `.lean` file exported as a standalone HTML page with embedded renderer.
+
+**Lean Viewer** — A single-page Book Viewer web app. Open `Viewer.html`, select the `Contents` folder, and browse all files with a navigable table of contents. Renders `.lean` source directly in the browser.
+
+Both formats work **fully offline** — no internet connection or server required.
+
+## Library Dependencies
+
+All rendering libraries are bundled locally in `media/_libs/`. No CDN dependency at runtime.
+
+| Library | Version | Purpose |
+|---|---|---|
+| [MathJax](https://www.mathjax.org/) | 4.1.1 | LaTeX math rendering |
+| [marked](https://marked.js.org/) | 17.0.3 | Markdown → HTML |
+| [mermaid](https://mermaid.js.org/) | 11.12.3 | Diagram rendering |
+| [@viz-js/viz](https://viz-js.com/) | 3.24.0 | Graphviz DOT rendering |
+
+## Rendering Guarantee
+
+The VS Code WebView and all exported HTML use the **exact same files** from `media/_libs/`, `renderer.js`, and `style.css`. Rendering output is identical across all environments:
+
+| Component | Extension WebView | Exported HTML / Viewer |
+|---|---|---|
+| Libraries | `media/_libs/` via `webviewUri` | `_libs/` (copy) |
+| Renderer | `media/renderer.js` via `webviewUri` | `renderer.js` (inlined) |
+| Styles | `media/style.css` via `<link>` | `style.css` (inlined) |
+| MathJax config | Extracted from `renderer.js` | Same extraction |

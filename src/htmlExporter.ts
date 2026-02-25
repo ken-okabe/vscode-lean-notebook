@@ -284,13 +284,15 @@ export async function runHtmlExport(
         if (!outputDirResult || outputDirResult.length === 0) return;
         const outputDir = outputDirResult[0].fsPath;
 
-        // Batch structure: outputDir/SourceDirName/_libs/ + Contents/...
+        // Export parent directory: outputDir/SourceDirName/
         const sourceDirName = path.basename(sourceDir);
-        const batchRoot = path.join(outputDir, sourceDirName);
+        const exportRoot = path.join(outputDir, sourceDirName);
+        const htmlDir = path.join(exportRoot, sourceDirName + '_Separate_HTML');
+        const viewerDir = path.join(exportRoot, sourceDirName + '_Lean_Viewer');
 
         // --- Confirmation ---
         const previewLines: string[] = [];
-        const maxPreview = 10;
+        const maxPreview = 8;
         for (let i = 0; i < Math.min(leanFiles.length, maxPreview); i++) {
             const rel = path.relative(sourceDir, leanFiles[i]);
             const relDir = path.dirname(rel);
@@ -298,20 +300,25 @@ export async function runHtmlExport(
             const outRel = relDir === '.'
                 ? path.join('Contents', htmlName)
                 : path.join('Contents', relDir, htmlName);
-            previewLines.push(`  ${outRel}`);
+            previewLines.push(`    ${outRel}`);
         }
         if (leanFiles.length > maxPreview) {
-            previewLines.push(`  … and ${leanFiles.length - maxPreview} more`);
+            previewLines.push(`    … and ${leanFiles.length - maxPreview} more`);
         }
 
         const confirmMsg = [
-            `Source:   ${sourceDir}`,
-            `Output:   ${batchRoot}/`,
-            `Files:    ${leanFiles.length} .lean file(s)`,
+            `Source:  ${sourceDir}`,
+            `Output:  ${exportRoot}/`,
+            `Files:   ${leanFiles.length} .lean file(s)`,
             ``,
-            `Structure:`,
-            `  _libs/`,
-            ...previewLines
+            `Output structure:`,
+            `  ${sourceDirName}_Separate_HTML/`,
+            `    _libs/`,
+            ...previewLines,
+            `  ${sourceDirName}_Lean_Viewer/`,
+            `    Viewer.html`,
+            `    _libs/`,
+            `    Contents/ (.lean files)`
         ].join('\n');
 
         const confirmed = await vscode.window.showInformationMessage(
@@ -329,22 +336,21 @@ export async function runHtmlExport(
                 cancellable: false
             },
             async (progress) => {
-                // Create batch root and copy _libs/
-                fs.mkdirSync(batchRoot, { recursive: true });
-                copyLibs(extensionUri, batchRoot);
+                // --- Separate HTML export ---
+                fs.mkdirSync(htmlDir, { recursive: true });
+                copyLibs(extensionUri, htmlDir);
 
-                // Export HTMLs into Contents/ subdirectory
-                const contentsDir = path.join(batchRoot, 'Contents');
+                const contentsDir = path.join(htmlDir, 'Contents');
                 let exported = 0;
                 let failed = 0;
                 for (const leanFilePath of leanFiles) {
                     const rel = path.relative(sourceDir, leanFilePath);
                     progress.report({
                         message: `(${exported + 1}/${leanFiles.length}) ${rel}`,
-                        increment: 100 / leanFiles.length
+                        increment: 80 / leanFiles.length
                     });
                     try {
-                        await exportSingleFile(extensionUri, leanFilePath, contentsDir, sourceDir, batchRoot);
+                        await exportSingleFile(extensionUri, leanFilePath, contentsDir, sourceDir, htmlDir);
                         exported++;
                     } catch (e) {
                         console.error(`HTML Export skip: ${leanFilePath}`, e);
@@ -352,11 +358,63 @@ export async function runHtmlExport(
                     }
                 }
 
+                // --- Lean Viewer export ---
+                progress.report({ message: 'Generating Lean Viewer…', increment: 10 });
+                try {
+                    fs.mkdirSync(viewerDir, { recursive: true });
+                    copyLibs(extensionUri, viewerDir);
+                    copyLeanFiles(sourceDir, path.join(viewerDir, 'Contents'));
+                    const viewerHtml = buildViewerHtml(extensionUri);
+                    fs.writeFileSync(path.join(viewerDir, 'Viewer.html'), viewerHtml, 'utf8');
+                } catch (e) {
+                    console.error('Lean Viewer export failed:', e);
+                }
+
                 const msg = failed === 0
-                    ? `HTML Export complete: ${exported} file(s) → ${batchRoot}`
-                    : `HTML Export done: ${exported} exported, ${failed} failed → ${batchRoot}`;
+                    ? `Export complete: ${exported} file(s) → ${exportRoot}/`
+                    : `Export done: ${exported} exported, ${failed} failed → ${exportRoot}/`;
                 vscode.window.showInformationMessage(msg);
             }
         );
+    }
+}
+
+/**
+ * Build the Book Viewer HTML from viewer-template.html.
+ * Injects renderer.js, style.css, and MathJax config.
+ */
+function buildViewerHtml(extensionUri: vscode.Uri): string {
+    const viewerTemplatePath = vscode.Uri.joinPath(extensionUri, 'media', 'viewer-template.html');
+    const rendererPath = vscode.Uri.joinPath(extensionUri, 'media', 'renderer.js');
+    const stylePath = vscode.Uri.joinPath(extensionUri, 'media', 'style.css');
+
+    let template = fs.readFileSync(viewerTemplatePath.fsPath, 'utf8');
+    const rendererJs = fs.readFileSync(rendererPath.fsPath, 'utf8');
+    const styleCss = fs.readFileSync(stylePath.fsPath, 'utf8');
+
+    // Inject style.css
+    template = template.replace('%%STYLES%%', () => styleCss);
+
+    // Inject MATHJAX_CONFIG
+    const mathJaxConfigJson = extractMathJaxConfig(rendererJs);
+    template = template.replace('%%MATHJAX_CONFIG%%', () => mathJaxConfigJson);
+
+    // Inline renderer.js
+    const safeRendererJs = rendererJs.replace(/<\/script>/gi, '<\\/script>');
+    template = template.replace('%%RENDERER_JS%%', () => safeRendererJs);
+
+    return template;
+}
+
+/**
+ * Copy all .lean files from sourceDir to destDir, preserving directory structure.
+ */
+function copyLeanFiles(sourceDir: string, destDir: string): void {
+    const leanFiles = findLeanFiles(sourceDir);
+    for (const leanFile of leanFiles) {
+        const rel = path.relative(sourceDir, leanFile);
+        const dest = path.join(destDir, rel);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(leanFile, dest);
     }
 }
