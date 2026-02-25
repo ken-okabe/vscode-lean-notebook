@@ -7,7 +7,7 @@
 <script>
 MathJax = %%MATHJAX_CONFIG%%;
 </script>
-<script async src="./_libs/mathjax/tex-chtml.js"></script>
+<script async src="./_libs/tex-svg.js"></script>
 <script src="./_libs/marked.min.js"></script>
 <script src="./_libs/mermaid.min.js"></script>
 <script src="./_libs/viz-standalone.js" async></script>
@@ -103,7 +103,7 @@ document.getElementById('dir-input').addEventListener('change', function(e) {
       loaded++;
       if (loaded === pending.length) {
         leanFiles.sort(function(a, b) { return a.path.localeCompare(b.path); });
-        document.getElementById('book-title').textContent = parts[0] || 'Book Viewer';
+        document.getElementById('book-title').textContent = (typeof BOOK_TITLE !== 'undefined' ? BOOK_TITLE : parts[0]) || 'Book Viewer';
         buildBookTree();
         document.getElementById('landing').style.display = 'none';
         document.getElementById('book-sidebar').classList.add('active');

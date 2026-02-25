@@ -313,12 +313,10 @@ export async function runHtmlExport(
             ``,
             `Output structure:`,
             `  ${sourceDirName}_Separate_HTML/`,
-            `    _libs/`,
-            ...previewLines,
+            `    _libs/ + Contents/`,
             `  ${sourceDirName}_Lean_Viewer/`,
-            `    Viewer.html`,
-            `    _libs/`,
-            `    Contents/ (.lean files)`
+            `    Viewer.html + _libs/ + Contents/`,
+            `  ${sourceDirName}_All_in_ONE.html`
         ].join('\n');
 
         const confirmed = await vscode.window.showInformationMessage(
@@ -359,15 +357,25 @@ export async function runHtmlExport(
                 }
 
                 // --- Lean Viewer export ---
-                progress.report({ message: 'Generating Lean Viewer…', increment: 10 });
+                progress.report({ message: 'Generating Lean Viewer…', increment: 5 });
                 try {
                     fs.mkdirSync(viewerDir, { recursive: true });
                     copyLibs(extensionUri, viewerDir);
                     copyLeanFiles(sourceDir, path.join(viewerDir, 'Contents'));
-                    const viewerHtml = buildViewerHtml(extensionUri);
+                    const viewerHtml = buildViewerHtml(extensionUri, sourceDirName);
                     fs.writeFileSync(path.join(viewerDir, 'Viewer.html'), viewerHtml, 'utf8');
                 } catch (e) {
                     console.error('Lean Viewer export failed:', e);
+                }
+
+                // --- All-in-ONE export ---
+                progress.report({ message: 'Generating All-in-ONE…', increment: 5 });
+                try {
+                    const allInOneHtml = buildAllInOneHtml(extensionUri, sourceDir, sourceDirName);
+                    const allInOnePath = path.join(exportRoot, sourceDirName + '_All_in_ONE.html');
+                    fs.writeFileSync(allInOnePath, allInOneHtml, 'utf8');
+                } catch (e) {
+                    console.error('All-in-ONE export failed:', e);
                 }
 
                 const msg = failed === 0
@@ -383,7 +391,7 @@ export async function runHtmlExport(
  * Build the Book Viewer HTML from viewer-template.html.
  * Injects renderer.js, style.css, and MathJax config.
  */
-function buildViewerHtml(extensionUri: vscode.Uri): string {
+function buildViewerHtml(extensionUri: vscode.Uri, bookTitle: string = 'Lean Notebook'): string {
     const viewerTemplatePath = vscode.Uri.joinPath(extensionUri, 'media', 'viewer-template.html');
     const rendererPath = vscode.Uri.joinPath(extensionUri, 'media', 'renderer.js');
     const stylePath = vscode.Uri.joinPath(extensionUri, 'media', 'style.css');
@@ -403,6 +411,10 @@ function buildViewerHtml(extensionUri: vscode.Uri): string {
     const safeRendererJs = rendererJs.replace(/<\/script>/gi, '<\\/script>');
     template = template.replace('%%RENDERER_JS%%', () => safeRendererJs);
 
+    // Inject book title as a JS variable before the closing </body>
+    const titleScript = '<script>var BOOK_TITLE = ' + JSON.stringify(bookTitle) + ';<' + '/script>';
+    template = template.replace('</body>', titleScript + '\n</body>');
+
     return template;
 }
 
@@ -417,4 +429,236 @@ function copyLeanFiles(sourceDir: string, destDir: string): void {
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(leanFile, dest);
     }
+}
+
+/**
+ * Build a completely self-contained All-in-ONE HTML file.
+ * Uses tex-svg.js (SVG output, no external fonts needed).
+ * All libraries inlined. All .lean sources embedded.
+ */
+function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitle: string = 'Lean Notebook'): string {
+    const mediaDir = vscode.Uri.joinPath(extensionUri, 'media').fsPath;
+    const libsDir = path.join(mediaDir, '_libs');
+
+    // Read libraries
+    const readLib = (p: string) => fs.readFileSync(p, 'utf8');
+    const markedJs = readLib(path.join(libsDir, 'marked.min.js'));
+    const mermaidJs = readLib(path.join(libsDir, 'mermaid.min.js'));
+    const vizJs = readLib(path.join(libsDir, 'viz-standalone.js'));
+    const texSvgJs = readLib(path.join(libsDir, 'tex-svg.js'));
+    const rendererJs = readLib(path.join(mediaDir, 'renderer.js'));
+    const styleCss = readLib(path.join(mediaDir, 'style.css'));
+
+    // MathJax config
+    const mathJaxConfigJson = extractMathJaxConfig(rendererJs);
+
+    // Escape </script> in all inlined JS
+    const esc = (s: string) => s.replace(/<\/script>/gi, '<\\/script>');
+
+    // Embed all .lean files
+    const leanFiles = findLeanFiles(sourceDir);
+    leanFiles.sort((a, b) => a.localeCompare(b));
+    const leanScriptTags: string[] = [];
+    for (const lf of leanFiles) {
+        const rel = path.relative(sourceDir, lf);
+        const content = esc(fs.readFileSync(lf, 'utf8'));
+        leanScriptTags.push(
+            '<script type="text/x-lean-source" data-path="' +
+            rel.replace(/"/g, '&quot;') + '">' + content + '<' + '/script>'
+        );
+    }
+
+    // Viewer CSS (same as viewer-template.html)
+    const viewerCss = `
+#landing{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:24px;background:var(--bg)}
+#landing h1{font-family:var(--font-serif);color:var(--blue-dark);font-size:1.8rem}
+#landing p{color:var(--text-muted);font-size:.95rem;max-width:420px;text-align:center;line-height:1.5}
+#book-sidebar{position:fixed;top:0;left:0;width:260px;height:100vh;background:var(--surface);border-right:1px solid var(--border);display:none;flex-direction:column;z-index:100;overflow:hidden}
+#book-sidebar.active{display:flex}
+#book-sidebar .book-header{padding:14px 16px 10px;border-bottom:1px solid var(--border-soft)}
+#book-sidebar .book-header .logo{font-family:var(--font-sans);font-weight:600;font-size:.85rem;color:var(--text-muted);letter-spacing:.03em}
+#book-sidebar .book-header .logo span{font-weight:300;color:var(--blue)}
+#book-sidebar .book-title{font-family:var(--font-serif);font-size:1rem;font-weight:600;color:var(--text);margin-top:6px}
+#book-tree{flex:1;overflow-y:auto;padding:8px 0;scrollbar-width:thin;scrollbar-color:var(--blue-dim) transparent}
+#book-tree .tree-dir{padding:4px 16px;font-family:var(--font-sans);font-size:.75rem;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;margin-top:8px}
+#book-tree .tree-dir:first-child{margin-top:0}
+#book-tree .tree-file{display:block;padding:5px 16px 5px 24px;font-family:var(--font-sans);font-size:.82rem;color:var(--text-muted);cursor:pointer;text-decoration:none;transition:background .1s,color .1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#book-tree .tree-file:hover{background:var(--surface-alt);color:var(--text)}
+#book-tree .tree-file.active{background:var(--blue-pale);color:var(--blue-dark);font-weight:500}
+#page-area{display:none;margin-left:260px}
+#page-area.active{display:block}
+`;
+
+    // Viewer JS — reads from embedded <script type="text/x-lean-source"> tags
+    const viewerJs = `
+var leanFiles = [];
+var currentIndex = -1;
+
+(function boot() {
+  var tags = document.querySelectorAll('script[type="text/x-lean-source"]');
+  for (var i = 0; i < tags.length; i++) {
+    leanFiles.push({ path: tags[i].getAttribute('data-path'), name: tags[i].getAttribute('data-path').split('/').pop(), content: tags[i].textContent });
+  }
+  leanFiles.sort(function(a, b) { return a.path.localeCompare(b.path); });
+  if (leanFiles.length === 0) return;
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('book-sidebar').classList.add('active');
+  document.getElementById('page-area').classList.add('active');
+  buildBookTree();
+  loadFile(0);
+})();
+
+function buildBookTree() {
+  var tree = document.getElementById('book-tree');
+  tree.innerHTML = '';
+  var dirs = {};
+  for (var i = 0; i < leanFiles.length; i++) {
+    var f = leanFiles[i];
+    var dir = f.path.indexOf('/') >= 0 ? f.path.substring(0, f.path.lastIndexOf('/')) : '';
+    if (!dirs[dir]) dirs[dir] = [];
+    dirs[dir].push({ index: i, name: f.name, path: f.path });
+  }
+  var keys = Object.keys(dirs);
+  for (var k = 0; k < keys.length; k++) {
+    var dir = keys[k];
+    if (dir) {
+      var dirEl = document.createElement('div');
+      dirEl.className = 'tree-dir';
+      dirEl.textContent = dir;
+      tree.appendChild(dirEl);
+    }
+    var items = dirs[dir];
+    for (var j = 0; j < items.length; j++) {
+      var el = document.createElement('a');
+      el.className = 'tree-file';
+      el.textContent = items[j].name.replace('.lean', '');
+      el.setAttribute('data-index', items[j].index);
+      el.addEventListener('click', (function(idx) { return function() { loadFile(idx); }; })(items[j].index));
+      tree.appendChild(el);
+    }
+  }
+}
+
+function loadFile(index) {
+  currentIndex = index;
+  var f = leanFiles[index];
+  var treeItems = document.querySelectorAll('#book-tree .tree-file');
+  for (var i = 0; i < treeItems.length; i++) {
+    treeItems[i].classList.toggle('active', parseInt(treeItems[i].getAttribute('data-index')) === index);
+  }
+  if (typeof marked !== 'undefined') { marked.use({ gfm: true, breaks: true }); }
+  var nb = document.getElementById('notebook');
+  nb.innerHTML = '';
+  var rawPre = document.getElementById('lean-raw-pre');
+  rawPre.innerHTML = hlLean(f.content);
+  var blocks = parseLean(f.content);
+  renderBlocksSeq(blocks, nb, 0, function() {
+    var tocHtml = '', hi = 0;
+    var headings = nb.querySelectorAll('h1,h2,h3');
+    for (var h = 0; h < headings.length; h++) {
+      var id = 'h' + hi++; headings[h].id = id;
+      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\\n';
+    }
+    document.getElementById('toc').innerHTML = tocHtml;
+    var h1 = nb.querySelector('h1');
+    if (h1) {
+      document.getElementById('doc-title').textContent = h1.textContent;
+      document.title = h1.textContent + ' \\u2014 Lean Notebook';
+    } else {
+      document.getElementById('doc-title').textContent = f.name;
+      document.title = f.name + ' \\u2014 Lean Notebook';
+    }
+    typesetMath(nb);
+  });
+  document.getElementById('notebook').style.display = '';
+  document.getElementById('lean-raw').style.display = 'none';
+  document.getElementById('vhtml').checked = true;
+}
+
+function renderBlocksSeq(blocks, nb, i, done) {
+  if (i >= blocks.length) { done(); return; }
+  var b = blocks[i];
+  if (b.type === 'module-doc' || b.type === 'doc-comment') {
+    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+    var el = document.createElement('div');
+    el.className = cls;
+    el.innerHTML = mdToHtml(b.content);
+    var codes = el.querySelectorAll('pre code');
+    for (var c = 0; c < codes.length; c++) {
+      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
+        codes[c].innerHTML = hlLean(codes[c].textContent || '');
+      }
+    }
+    nb.appendChild(el);
+    renderBlocksSeq(blocks, nb, i + 1, done);
+  } else if (b.type === 'code') {
+    var el2 = document.createElement('div');
+    el2.className = 'block-code';
+    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
+    nb.appendChild(el2);
+    renderBlocksSeq(blocks, nb, i + 1, done);
+  } else if (b.type === 'mermaid') {
+    var wrap = document.createElement('div');
+    wrap.className = 'block-mermaid';
+    nb.appendChild(wrap);
+    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
+  } else if (b.type === 'graphviz') {
+    var wrap2 = document.createElement('div');
+    wrap2.className = 'block-graphviz';
+    nb.appendChild(wrap2);
+    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
+  } else {
+    renderBlocksSeq(blocks, nb, i + 1, done);
+  }
+}
+
+document.querySelectorAll('input[name="view"]').forEach(function(radio) {
+  radio.addEventListener('change', function() {
+    var nb = document.getElementById('notebook');
+    var leanRaw = document.getElementById('lean-raw');
+    if (radio.value === 'lean') { nb.style.display = 'none'; leanRaw.style.display = 'block'; }
+    else { nb.style.display = ''; leanRaw.style.display = 'none'; }
+  });
+});
+`;
+
+    // Build the complete HTML
+    const html = [
+        '<!DOCTYPE html>',
+        '<html lang="en">',
+        '<head>',
+        '<meta charset="UTF-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '<title>' + bookTitle + ' — Lean Notebook</title>',
+        '<script>MathJax = ' + mathJaxConfigJson + ';<' + '/script>',
+        '<script>' + esc(texSvgJs) + '<' + '/script>',
+        '<script>' + esc(markedJs) + '<' + '/script>',
+        '<script>' + esc(mermaidJs) + '<' + '/script>',
+        '<script>' + esc(vizJs) + '<' + '/script>',
+        '<style>' + styleCss + '</style>',
+        '<style>' + viewerCss + '</style>',
+        '</head>',
+        '<body>',
+        // Embedded lean sources
+        ...leanScriptTags,
+        // Landing (shown briefly if no files)
+        '<div id="landing"><h1>lean <span style="font-weight:300;color:var(--blue)">notebook</span></h1><p>Loading…</p></div>',
+        // Book sidebar
+        '<nav id="book-sidebar"><div class="book-header"><div class="logo">lean<span> notebook</span></div><div class="book-title" id="book-title">' + bookTitle + '</div></div><div id="book-tree"></div></nav>',
+        // Page area
+        '<div id="page-area"><div id="app">',
+        '<div id="topbar"><div class="logo">lean<span> notebook</span></div><div class="sep">\u00b7</div><div class="doc-title" id="doc-title"></div>',
+        '<div id="view-toggle"><input type="radio" name="view" id="vlean" value="lean"><label for="vlean">lean</label><input type="radio" name="view" id="vhtml" value="html" checked><label for="vhtml">HTML</label></div></div>',
+        '<nav id="sidebar"><div id="toc-label">Contents</div><div id="toc"></div></nav>',
+        '<main id="notebook"></main>',
+        '<div id="lean-raw"><pre id="lean-raw-pre"></pre></div>',
+        '</div></div>',
+        // Scripts
+        '<script>' + esc(rendererJs) + '<' + '/script>',
+        '<script>' + esc(viewerJs) + '<' + '/script>',
+        '</body>',
+        '</html>'
+    ].join('\n');
+
+    return html;
 }

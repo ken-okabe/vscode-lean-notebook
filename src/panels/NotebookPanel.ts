@@ -260,7 +260,7 @@ export class NotebookPanel {
         const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'marked.min.js'));
 
         // MathJax (local, from _libs/)
-        const mathJaxUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'mathjax', 'tex-chtml.js'));
+        const mathJaxUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'tex-svg.js'));
 
         // Mermaid for diagrams (from _libs/)
         const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'mermaid.min.js'));
