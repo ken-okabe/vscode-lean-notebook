@@ -118,6 +118,9 @@ function mdToHtml(content) {
     const PH_I = (i) => `LNMATH_I_${i}_END`;
 
     let s = content;
+    // Strip leading --- line that marked would misinterpret as YAML front matter.
+    // In Lean /-! blocks, --- is used as a horizontal rule / separator, not YAML.
+    s = s.replace(/^\s*---\s*\n/, '\n');
     // Display math first (multi-line)
     s = s.replace(/\$\$([\s\S]*?)\$\$/g, (m, c) => {
         const i = mathBlocks.length;

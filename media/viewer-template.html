@@ -1,236 +1,365 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lean Notebook Book Viewer</title>
-<script>
-MathJax = %%MATHJAX_CONFIG%%;
-</script>
-<script async src="./_libs/tex-svg.js"></script>
-<script src="./_libs/marked.min.js"></script>
-<script src="./_libs/mermaid.min.js"></script>
-<script src="./_libs/viz-standalone.js" async></script>
-<style>
-%%STYLES%%
-</style>
-<style>
-#landing{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:24px;background:var(--bg)}
-#landing h1{font-family:var(--font-serif);color:var(--blue-dark);font-size:1.8rem}
-#landing p{color:var(--text-muted);font-size:.95rem;max-width:420px;text-align:center;line-height:1.5}
-#landing .open-btn{background:var(--blue);color:#fff;border:none;padding:12px 32px;border-radius:6px;font-size:1rem;font-family:var(--font-sans);cursor:pointer;transition:background .15s}
-#landing .open-btn:hover{background:var(--blue-dark)}
-#dir-input{display:none}
-#book-sidebar{position:fixed;top:0;left:0;width:260px;height:100vh;background:var(--surface);border-right:1px solid var(--border);display:none;flex-direction:column;z-index:100;overflow:hidden}
-#book-sidebar.active{display:flex}
-#book-sidebar .book-header{padding:14px 16px 10px;border-bottom:1px solid var(--border-soft)}
-#book-sidebar .book-header .logo{font-family:var(--font-sans);font-weight:600;font-size:.85rem;color:var(--text-muted);letter-spacing:.03em}
-#book-sidebar .book-header .logo span{font-weight:300;color:var(--blue)}
-#book-sidebar .book-title{font-family:var(--font-serif);font-size:1rem;font-weight:600;color:var(--text);margin-top:6px}
-#book-tree{flex:1;overflow-y:auto;padding:8px 0;scrollbar-width:thin;scrollbar-color:var(--blue-dim) transparent}
-#book-tree .tree-dir{padding:4px 16px;font-family:var(--font-sans);font-size:.75rem;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;margin-top:8px}
-#book-tree .tree-dir:first-child{margin-top:0}
-#book-tree .tree-file{display:block;padding:5px 16px 5px 24px;font-family:var(--font-sans);font-size:.82rem;color:var(--text-muted);cursor:pointer;text-decoration:none;transition:background .1s,color .1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#book-tree .tree-file:hover{background:var(--surface-alt);color:var(--text)}
-#book-tree .tree-file.active{background:var(--blue-pale);color:var(--blue-dark);font-weight:500}
-#page-area{display:none;margin-left:260px}
-#page-area.active{display:block}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lean Notebook Book Viewer</title>
+  <script>
+    MathJax = %% MATHJAX_CONFIG %%;
+  </script>
+  %%LIB_TEX_SVG%%
+  %%LIB_MARKED%%
+  %%LIB_MERMAID%%
+  %%LIB_VIZ%%
+  <style>
+    %%STYLES%%
+  </style>
+  <style>
+    #landing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 24px;
+      background: var(--bg)
+    }
+
+    #landing h1 {
+      font-family: var(--font-serif);
+      color: var(--blue-dark);
+      font-size: 1.8rem
+    }
+
+    #landing p {
+      color: var(--text-muted);
+      font-size: .95rem;
+      max-width: 420px;
+      text-align: center;
+      line-height: 1.5
+    }
+
+    #landing .open-btn {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background .15s
+    }
+
+    #landing .open-btn:hover {
+      background: var(--blue-dark)
+    }
+
+    #dir-input {
+      display: none
+    }
+
+    #book-sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 260px;
+      height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: none;
+      flex-direction: column;
+      z-index: 100;
+      overflow: hidden
+    }
+
+    #book-sidebar.active {
+      display: flex
+    }
+
+    #book-sidebar .book-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border-soft)
+    }
+
+    #book-sidebar .book-header .logo {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: .85rem;
+      color: var(--text-muted);
+      letter-spacing: .03em
+    }
+
+    #book-sidebar .book-header .logo span {
+      font-weight: 300;
+      color: var(--blue)
+    }
+
+    #book-sidebar .book-title {
+      font-family: var(--font-serif);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 6px
+    }
+
+    #book-tree {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--blue-dim) transparent
+    }
+
+    #book-tree .tree-dir {
+      padding: 4px 16px;
+      font-family: var(--font-sans);
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-top: 8px
+    }
+
+    #book-tree .tree-dir:first-child {
+      margin-top: 0
+    }
+
+    #book-tree .tree-file {
+      display: block;
+      padding: 5px 16px 5px 24px;
+      font-family: var(--font-sans);
+      font-size: .82rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .1s, color .1s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    #book-tree .tree-file:hover {
+      background: var(--surface-alt);
+      color: var(--text)
+    }
+
+    #book-tree .tree-file.active {
+      background: var(--blue-pale);
+      color: var(--blue-dark);
+      font-weight: 500
+    }
+
+    #page-area {
+      display: none;
+      margin-left: 260px
+    }
+
+    #page-area.active {
+      display: block
+    }
+  </style>
 </head>
+
 <body>
-<div id="landing">
-<h1>lean <span style="font-weight:300;color:var(--blue)">notebook</span> book viewer</h1>
-<p>Select the <strong>Contents</strong> folder containing <code>.lean</code> files to start reading.</p>
-<button class="open-btn" id="open-btn">Open Contents Folder</button>
-<input type="file" id="dir-input" webkitdirectory multiple>
-</div>
-<nav id="book-sidebar">
-<div class="book-header">
-<div class="logo">lean<span> notebook</span></div>
-<div class="book-title" id="book-title">Book Viewer</div>
-</div>
-<div id="book-tree"></div>
-</nav>
-<div id="page-area">
-<div id="app">
-<div id="topbar">
-<div class="logo">lean<span> notebook</span></div>
-<div class="sep">·</div>
-<div class="doc-title" id="doc-title">Select a file…</div>
-<div id="view-toggle">
-<input type="radio" name="view" id="vlean" value="lean">
-<label for="vlean">lean</label>
-<input type="radio" name="view" id="vhtml" value="html" checked>
-<label for="vhtml">HTML</label>
-</div>
-</div>
-<nav id="sidebar">
-<div id="toc-label">Contents</div>
-<div id="toc"></div>
-</nav>
-<main id="notebook"></main>
-<div id="lean-raw"><pre id="lean-raw-pre"></pre></div>
-</div>
-</div>
-<script>
-%%RENDERER_JS%%
-</script>
-<script>
+  <div id="landing">
+    <h1>lean <span style="font-weight:300;color:var(--blue)">notebook</span> book viewer</h1>
+    <p>Select the lean project directory containing <code>.lean</code> files to start reading.</p>
+    <button class="open-btn" id="open-btn">Open Lean Project Folder</button>
+    <input type="file" id="dir-input" webkitdirectory multiple>
+  </div>
+  <nav id="book-sidebar">
+    <div class="book-header">
+      <div class="logo">lean<span> notebook</span></div>
+      <div class="book-title" id="book-title">Book Viewer</div>
+    </div>
+    <div id="book-tree"></div>
+  </nav>
+  <div id="page-area">
+    <div id="app">
+      <div id="topbar">
+        <div class="logo">lean<span> notebook</span></div>
+        <div class="sep">·</div>
+        <div class="doc-title" id="doc-title">Select a file…</div>
+        <div id="view-toggle">
+          <input type="radio" name="view" id="vlean" value="lean">
+          <label for="vlean">lean</label>
+          <input type="radio" name="view" id="vhtml" value="html" checked>
+          <label for="vhtml">HTML</label>
+        </div>
+      </div>
+      <nav id="sidebar">
+        <div id="toc-label">Contents</div>
+        <div id="toc"></div>
+      </nav>
+      <main id="notebook"></main>
+      <div id="lean-raw">
+        <pre id="lean-raw-pre"></pre>
+      </div>
+    </div>
+  </div>
+  <script>
+%% RENDERER_JS %%
+  </script>
+  <script>
 var leanFiles = [];
-var currentIndex = -1;
+    var currentIndex = -1;
 
-document.getElementById('open-btn').addEventListener('click', function() {
-  document.getElementById('dir-input').click();
-});
+    document.getElementById('open-btn').addEventListener('click', function () {
+      document.getElementById('dir-input').click();
+    });
 
-document.getElementById('dir-input').addEventListener('change', function(e) {
-  var files = Array.from(e.target.files || []);
-  leanFiles = [];
-  var pending = [];
-  for (var i = 0; i < files.length; i++) {
-    if (files[i].name.endsWith('.lean')) {
-      pending.push(files[i]);
-    }
-  }
-  var loaded = 0;
-  if (pending.length === 0) { alert('No .lean files found.'); return; }
-  pending.forEach(function(f) {
-    var reader = new FileReader();
-    reader.onload = function(ev) {
-      var parts = f.webkitRelativePath.split('/');
-      var relPath = parts.slice(1).join('/');
-      leanFiles.push({ path: relPath, name: f.name, content: ev.target.result });
-      loaded++;
-      if (loaded === pending.length) {
-        leanFiles.sort(function(a, b) { return a.path.localeCompare(b.path); });
-        document.getElementById('book-title').textContent = (typeof BOOK_TITLE !== 'undefined' ? BOOK_TITLE : parts[0]) || 'Book Viewer';
-        buildBookTree();
-        document.getElementById('landing').style.display = 'none';
-        document.getElementById('book-sidebar').classList.add('active');
-        document.getElementById('page-area').classList.add('active');
-        loadFile(0);
-      }
-    };
-    reader.readAsText(f);
-  });
-});
-
-function buildBookTree() {
-  var tree = document.getElementById('book-tree');
-  tree.innerHTML = '';
-  var dirs = {};
-  for (var i = 0; i < leanFiles.length; i++) {
-    var f = leanFiles[i];
-    var dir = f.path.indexOf('/') >= 0 ? f.path.substring(0, f.path.lastIndexOf('/')) : '';
-    if (!dirs[dir]) dirs[dir] = [];
-    dirs[dir].push({ index: i, name: f.name, path: f.path });
-  }
-  var keys = Object.keys(dirs);
-  for (var k = 0; k < keys.length; k++) {
-    var dir = keys[k];
-    if (dir) {
-      var dirEl = document.createElement('div');
-      dirEl.className = 'tree-dir';
-      dirEl.textContent = dir;
-      tree.appendChild(dirEl);
-    }
-    var items = dirs[dir];
-    for (var j = 0; j < items.length; j++) {
-      var el = document.createElement('a');
-      el.className = 'tree-file';
-      el.textContent = items[j].name.replace('.lean', '');
-      el.setAttribute('data-index', items[j].index);
-      el.addEventListener('click', (function(idx) { return function() { loadFile(idx); }; })(items[j].index));
-      tree.appendChild(el);
-    }
-  }
-}
-
-function loadFile(index) {
-  currentIndex = index;
-  var f = leanFiles[index];
-  var treeItems = document.querySelectorAll('#book-tree .tree-file');
-  for (var i = 0; i < treeItems.length; i++) {
-    treeItems[i].classList.toggle('active', parseInt(treeItems[i].getAttribute('data-index')) === index);
-  }
-  if (typeof marked !== 'undefined') { marked.use({ gfm: true, breaks: true }); }
-  var nb = document.getElementById('notebook');
-  nb.innerHTML = '';
-  var rawPre = document.getElementById('lean-raw-pre');
-  rawPre.innerHTML = hlLean(f.content);
-  var blocks = parseLean(f.content);
-  renderBlocksAsync(blocks, nb).then(function() {
-    var tocHtml = '', hi = 0;
-    var headings = nb.querySelectorAll('h1,h2,h3');
-    for (var h = 0; h < headings.length; h++) {
-      var id = 'h' + hi++; headings[h].id = id;
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\n';
-    }
-    document.getElementById('toc').innerHTML = tocHtml;
-    var h1 = nb.querySelector('h1');
-    if (h1) {
-      document.getElementById('doc-title').textContent = h1.textContent;
-      document.title = h1.textContent + ' \u2014 Lean Notebook';
-    } else {
-      document.getElementById('doc-title').textContent = f.name;
-      document.title = f.name + ' \u2014 Lean Notebook';
-    }
-    typesetMath(nb);
-  });
-  document.getElementById('notebook').style.display = '';
-  document.getElementById('lean-raw').style.display = 'none';
-  document.getElementById('vhtml').checked = true;
-}
-
-function renderBlocksAsync(blocks, nb) {
-  return new Promise(function(resolve) {
-    (function next(i) {
-      if (i >= blocks.length) { resolve(); return; }
-      var b = blocks[i];
-      if (b.type === 'module-doc' || b.type === 'doc-comment') {
-        var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
-        var el = document.createElement('div');
-        el.className = cls;
-        el.innerHTML = mdToHtml(b.content);
-        var codes = el.querySelectorAll('pre code');
-        for (var c = 0; c < codes.length; c++) {
-          if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
-            codes[c].innerHTML = hlLean(codes[c].textContent || '');
-          }
+    document.getElementById('dir-input').addEventListener('change', function (e) {
+      var files = Array.from(e.target.files || []);
+      leanFiles = [];
+      var pending = [];
+      for (var i = 0; i < files.length; i++) {
+        if (files[i].name.endsWith('.lean')) {
+          pending.push(files[i]);
         }
-        nb.appendChild(el);
-        next(i + 1);
-      } else if (b.type === 'code') {
-        var el2 = document.createElement('div');
-        el2.className = 'block-code';
-        el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
-        nb.appendChild(el2);
-        next(i + 1);
-      } else if (b.type === 'mermaid') {
-        var wrap = document.createElement('div');
-        wrap.className = 'block-mermaid';
-        nb.appendChild(wrap);
-        renderMermaid(b.source, wrap).then(function() { next(i + 1); });
-      } else if (b.type === 'graphviz') {
-        var wrap2 = document.createElement('div');
-        wrap2.className = 'block-graphviz';
-        nb.appendChild(wrap2);
-        renderGraphviz(b.source, wrap2).then(function() { next(i + 1); });
-      } else {
-        next(i + 1);
       }
-    })(0);
-  });
-}
+      var loaded = 0;
+      if (pending.length === 0) { alert('No .lean files found.'); return; }
+      pending.forEach(function (f) {
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+          var parts = f.webkitRelativePath.split('/');
+          var relPath = parts.slice(1).join('/');
+          leanFiles.push({ path: relPath, name: f.name, content: ev.target.result });
+          loaded++;
+          if (loaded === pending.length) {
+            leanFiles.sort(function (a, b) { return a.path.localeCompare(b.path); });
+            document.getElementById('book-title').textContent = (typeof BOOK_TITLE !== 'undefined' ? BOOK_TITLE : parts[0]) || 'Book Viewer';
+            buildBookTree();
+            document.getElementById('landing').style.display = 'none';
+            document.getElementById('book-sidebar').classList.add('active');
+            document.getElementById('page-area').classList.add('active');
+            loadFile(0);
+          }
+        };
+        reader.readAsText(f);
+      });
+    });
 
-document.querySelectorAll('input[name="view"]').forEach(function(radio) {
-  radio.addEventListener('change', function() {
-    var nb = document.getElementById('notebook');
-    var leanRaw = document.getElementById('lean-raw');
-    if (radio.value === 'lean') { nb.style.display = 'none'; leanRaw.style.display = 'block'; }
-    else { nb.style.display = ''; leanRaw.style.display = 'none'; }
-  });
-});
-</script>
+    function buildBookTree() {
+      var tree = document.getElementById('book-tree');
+      tree.innerHTML = '';
+      var dirs = {};
+      for (var i = 0; i < leanFiles.length; i++) {
+        var f = leanFiles[i];
+        var dir = f.path.indexOf('/') >= 0 ? f.path.substring(0, f.path.lastIndexOf('/')) : '';
+        if (!dirs[dir]) dirs[dir] = [];
+        dirs[dir].push({ index: i, name: f.name, path: f.path });
+      }
+      var keys = Object.keys(dirs);
+      for (var k = 0; k < keys.length; k++) {
+        var dir = keys[k];
+        if (dir) {
+          var dirEl = document.createElement('div');
+          dirEl.className = 'tree-dir';
+          dirEl.textContent = dir;
+          tree.appendChild(dirEl);
+        }
+        var items = dirs[dir];
+        for (var j = 0; j < items.length; j++) {
+          var el = document.createElement('a');
+          el.className = 'tree-file';
+          el.textContent = items[j].name.replace('.lean', '');
+          el.setAttribute('data-index', items[j].index);
+          el.addEventListener('click', (function (idx) { return function () { loadFile(idx); }; })(items[j].index));
+          tree.appendChild(el);
+        }
+      }
+    }
+
+    function loadFile(index) {
+      currentIndex = index;
+      var f = leanFiles[index];
+      var treeItems = document.querySelectorAll('#book-tree .tree-file');
+      for (var i = 0; i < treeItems.length; i++) {
+        treeItems[i].classList.toggle('active', parseInt(treeItems[i].getAttribute('data-index')) === index);
+      }
+      if (typeof marked !== 'undefined') { marked.use({ gfm: true, breaks: true }); }
+      var nb = document.getElementById('notebook');
+      nb.innerHTML = '';
+      var rawPre = document.getElementById('lean-raw-pre');
+      rawPre.innerHTML = hlLean(f.content);
+      var blocks = parseLean(f.content);
+      renderBlocksAsync(blocks, nb).then(function () {
+        var tocHtml = '', hi = 0;
+        var headings = nb.querySelectorAll('h1,h2,h3');
+        for (var h = 0; h < headings.length; h++) {
+          var id = 'h' + hi++; headings[h].id = id;
+          tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\n';
+        }
+        document.getElementById('toc').innerHTML = tocHtml;
+        var h1 = nb.querySelector('h1');
+        if (h1) {
+          document.getElementById('doc-title').textContent = h1.textContent;
+          document.title = h1.textContent + ' \u2014 Lean Notebook';
+        } else {
+          document.getElementById('doc-title').textContent = f.name;
+          document.title = f.name + ' \u2014 Lean Notebook';
+        }
+        typesetMath(nb);
+      });
+      document.getElementById('notebook').style.display = '';
+      document.getElementById('lean-raw').style.display = 'none';
+      document.getElementById('vhtml').checked = true;
+    }
+
+    function renderBlocksAsync(blocks, nb) {
+      return new Promise(function (resolve) {
+        (function next(i) {
+          if (i >= blocks.length) { resolve(); return; }
+          var b = blocks[i];
+          if (b.type === 'module-doc' || b.type === 'doc-comment') {
+            var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+            var el = document.createElement('div');
+            el.className = cls;
+            el.innerHTML = mdToHtml(b.content);
+            var codes = el.querySelectorAll('pre code');
+            for (var c = 0; c < codes.length; c++) {
+              if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
+                codes[c].innerHTML = hlLean(codes[c].textContent || '');
+              }
+            }
+            nb.appendChild(el);
+            next(i + 1);
+          } else if (b.type === 'code') {
+            var el2 = document.createElement('div');
+            el2.className = 'block-code';
+            el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
+            nb.appendChild(el2);
+            next(i + 1);
+          } else if (b.type === 'mermaid') {
+            var wrap = document.createElement('div');
+            wrap.className = 'block-mermaid';
+            nb.appendChild(wrap);
+            renderMermaid(b.source, wrap).then(function () { next(i + 1); });
+          } else if (b.type === 'graphviz') {
+            var wrap2 = document.createElement('div');
+            wrap2.className = 'block-graphviz';
+            nb.appendChild(wrap2);
+            renderGraphviz(b.source, wrap2).then(function () { next(i + 1); });
+          } else {
+            next(i + 1);
+          }
+        })(0);
+      });
+    }
+
+    document.querySelectorAll('input[name="view"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        var nb = document.getElementById('notebook');
+        var leanRaw = document.getElementById('lean-raw');
+        if (radio.value === 'lean') { nb.style.display = 'none'; leanRaw.style.display = 'block'; }
+        else { nb.style.display = ''; leanRaw.style.display = 'none'; }
+      });
+    });
+  </script>
 </body>
+
 </html>
