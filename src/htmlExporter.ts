@@ -510,7 +510,8 @@ document.getElementById('dir-input').addEventListener('change', function(e) {
     var reader = new FileReader();
     reader.onload = function(ev) {
       var parts = f.webkitRelativePath.split('/');
-      var relPath = parts.slice(1).join('/');
+      // slice(2) skips the picker root AND the project subdirectory
+      var relPath = parts.slice(2).join('/');
       leanFiles.push({ path: relPath, name: f.name, content: ev.target.result });
       loaded++;
       if (loaded === pending.length) {
@@ -710,7 +711,9 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
   leanFiles.sort((a, b) => a.localeCompare(b));
   const leanScriptTags: string[] = [];
   for (const lf of leanFiles) {
-    const rel = path.relative(sourceDir, lf);
+    const fullRel = path.relative(sourceDir, lf);
+    // Strip the first component (project name directory) from the path
+    const rel = fullRel.split(path.sep).slice(1).join('/');
     const content = esc(fs.readFileSync(lf, 'utf8'));
     leanScriptTags.push(
       '<script type="text/x-lean-source" data-path="' +
