@@ -10,7 +10,7 @@ A VS Code extension that transforms Lean 4 source files (`.lean`) into richly re
 - **Mermaid Diagrams** — Fenced ` ```mermaid ` blocks rendered as diagrams
 - **Graphviz** — Fenced ` ```graphviz ` blocks rendered as DOT graphs
 - **Lean Syntax Highlighting** — Code blocks highlighted with Lean-aware tokenizer
-- **HTML Export** — Export individual files or entire directories as standalone offline HTML
+- **HTML Export** — Export individual files or entire Lean projects as standalone offline HTML
 
 ## Usage
 
@@ -21,7 +21,7 @@ When a `.lean` file is open, two buttons appear in the **bottom-right** of the V
 | Button | Icon | Action |
 |---|---|---|
 | **Preview / Source** | `$(preview)` / `$(code)` | Toggle between the rendered notebook preview and raw Lean source |
-| **HTML Export** | `$(export)` | Export the current file or an entire directory as HTML |
+| **HTML Export** | `$(export)` | Export the current file or an entire project as HTML |
 
 ### Preview
 
@@ -36,6 +36,7 @@ When a `.lean` file is open, two buttons appear in the **bottom-right** of the V
 Click the **Export** button (or run `LeanNotebook: HTML Export` from the Command Palette). You will be prompted to choose:
 
 #### Single File Export
+
 Select **"Export current file"** — creates a self-contained directory:
 ```
 FileName/
@@ -43,32 +44,52 @@ FileName/
   _libs/            ← rendering libraries
 ```
 
-#### Directory Export
-Select **"Export all .lean files in a directory…"** — select a source directory and an output location.
-Three output formats are generated under one parent:
+#### Directory Export (Lean Project)
+
+Select **"Export all .lean files in a directory…"** to export an entire Lean 4 project.
+
+**Export flow:**
+
+1. **Select Lean Project Directory** — choose the root of your Lean project (containing `lakefile.lean`, `lean-toolchain`, etc.)
+2. **Enter export directory name** — defaults to the auto-detected project name (e.g. `CL8E8TQC`, detected from a root `.lean` file that has a matching subdirectory)
+3. **Select output location** — choose where to write the export
+4. **Confirm** — review the output structure and proceed
+
+Four outputs are generated under one parent directory:
+
 ```
-DirName/
-  DirName_Separate_HTML/
+CL8E8TQC/
+  CL8E8TQC_Separate_HTML/
     _libs/
-    Contents/
-      Module1/file1.html     ← individual HTML pages
-      Module2/file2.html
+    CL8E8TQC/
+      _00_Introduction/
+        _00_LiterateCoding_lean.html
+        _01_Overview_lean.html
+      _01_TQC/
+        ...
 
-  DirName_Lean_Viewer/
-    Viewer.html              ← Book Viewer app
-    _libs/
-    Contents/
-      Module1/file1.lean     ← original .lean files
-      Module2/file2.lean
+  LeanProject/                   ← full project copy (.lake excluded)
+    CL8E8TQC/
+      _00_Introduction/
+      _01_TQC/
+      ...
+    CL8E8TQC.lean
+    lakefile.lean
+    lean-toolchain
+    lake-manifest.json
 
-  DirName_All_in_ONE.html    ← single self-contained file (~6MB)
+  LeanProjectViewer.html         ← self-contained Book Viewer app (~6 MB)
+
+  CL8E8TQC_All_in_ONE.html      ← single self-contained file (~6 MB)
 ```
 
-**Separate HTML** — Each `.lean` file as a standalone HTML page.
+**Separate HTML** — Each `.lean` file as a standalone HTML page. Only content `.lean` files in subdirectories are exported; root-level project files (`lakefile.lean`, etc.) are excluded.
 
-**Lean Viewer** — A Book Viewer web app. Open `Viewer.html`, select the `Contents` folder, and browse all files with a navigable sidebar and page table of contents.
+**LeanProject** — A copy of the entire Lean project source with the `.lake` build cache excluded. This allows recipients to build and verify the project with `lake build`.
 
-**All-in-ONE** — A single self-contained HTML file (~6MB) with all libraries and all `.lean` sources embedded. No external files or folders needed — just open in a browser.
+**LeanProjectViewer** — A single self-contained Book Viewer HTML application with all rendering libraries inlined. Open the file in a browser, select your Lean project directory, and browse all files with a navigable sidebar and page table of contents. Root-level project files are automatically filtered out from the file tree.
+
+**All-in-ONE** — A single self-contained HTML file with all libraries and all content `.lean` sources embedded. No external files or folders needed — just open in a browser.
 
 All formats work **fully offline** — no internet connection or server required.
 
@@ -87,7 +108,7 @@ The VS Code WebView and all exported HTML use the **exact same files**:
 | `media/_libs/mermaid.min.js` | Mermaid diagram rendering |
 | `media/_libs/viz-standalone.js` | Graphviz DOT rendering |
 
-All environments — Extension, Separate HTML, Lean Viewer, All-in-ONE — load the same renderer, styles, and libraries. Rendering output is identical everywhere.
+All environments — Extension, Separate HTML, LeanProjectViewer, All-in-ONE — load the same renderer, styles, and libraries. Rendering output is identical everywhere.
 
 ### Library Versions
 

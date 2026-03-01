@@ -42,6 +42,23 @@ function copyDirRecursive(src: string, dst: string): void {
   }
 }
 
+/**
+ * Copy a Lean project directory to destDir, excluding .lake/.
+ */
+function copyProjectFiles(sourceDir: string, destDir: string): void {
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (entry.name === '.lake') continue;
+    const srcPath = path.join(sourceDir, entry.name);
+    const dstPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, dstPath);
+    } else {
+      fs.copyFileSync(srcPath, dstPath);
+    }
+  }
+}
+
 function buildHtml(extensionUri: vscode.Uri, leanSource: string, libsRelPath: string = './_libs'): string {
   const templatePath = vscode.Uri.joinPath(extensionUri, 'media', 'template.html');
   const rendererPath = vscode.Uri.joinPath(extensionUri, 'media', 'renderer.js');
@@ -110,6 +127,20 @@ function findLeanFiles(dir: string): string[] {
       results.push(...findLeanFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith('.lean')) {
       results.push(fullPath);
+    }
+  }
+  return results;
+}
+
+/**
+ * Find *.lean files only inside subdirectories of `dir`, skipping
+ * root-level project files (e.g. lakefile.lean, ProjectName.lean).
+ */
+function findContentLeanFiles(dir: string): string[] {
+  const results: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name !== '.lake') {
+      results.push(...findLeanFiles(path.join(dir, entry.name)));
     }
   }
   return results;
@@ -260,13 +291,13 @@ export async function runHtmlExport(
       canSelectFiles: false,
       canSelectFolders: true,
       canSelectMany: false,
-      openLabel: 'Select Source Directory (containing .lean files)'
+      openLabel: 'Select Lean Project Directory'
     });
     if (!sourceDirResult || sourceDirResult.length === 0) return;
     const sourceDir = sourceDirResult[0].fsPath;
 
     // Enumerate .lean files
-    const leanFiles = findLeanFiles(sourceDir);
+    const leanFiles = findContentLeanFiles(sourceDir);
     if (leanFiles.length === 0) {
       vscode.window.showWarningMessage(
         `HTML Export: No .lean files found in:\n${sourceDir}`
@@ -274,7 +305,25 @@ export async function runHtmlExport(
       return;
     }
 
-    // Step 2b: Select output directory
+    // Detect project name from root-level .lean file that has a matching subdirectory
+    const rootEntries = fs.readdirSync(sourceDir, { withFileTypes: true });
+    const rootDirs = new Set(rootEntries.filter(e => e.isDirectory()).map(e => e.name));
+    const projectFile = rootEntries.find(
+      e => e.isFile() && e.name.endsWith('.lean') && rootDirs.has(e.name.replace('.lean', ''))
+    );
+    const projectName = projectFile
+      ? projectFile.name.replace('.lean', '')
+      : path.basename(sourceDir);
+
+    // Step 2b: Ask for output name
+    const exportName = await vscode.window.showInputBox({
+      prompt: 'Enter the export directory name',
+      value: projectName,
+      validateInput: (v) => v.trim() ? null : 'Name cannot be empty'
+    });
+    if (!exportName) return;
+
+    // Step 2c: Select output directory
     const outputDirResult = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
@@ -284,37 +333,31 @@ export async function runHtmlExport(
     if (!outputDirResult || outputDirResult.length === 0) return;
     const outputDir = outputDirResult[0].fsPath;
 
-    // Export parent directory: outputDir/SourceDirName/
-    const sourceDirName = path.basename(sourceDir);
-    const exportRoot = path.join(outputDir, sourceDirName);
-    const htmlDir = path.join(exportRoot, sourceDirName + '_Separate_HTML');
+    // Export parent directory: outputDir/ExportName/
+    const exportRoot = path.join(outputDir, exportName);
+    const htmlDir = path.join(exportRoot, projectName + '_Separate_HTML');
 
     // --- Confirmation ---
-    const previewLines: string[] = [];
-    const maxPreview = 8;
-    for (let i = 0; i < Math.min(leanFiles.length, maxPreview); i++) {
-      const rel = path.relative(sourceDir, leanFiles[i]);
-      const relDir = path.dirname(rel);
-      const htmlName = toHtmlFileName(leanFiles[i]);
-      const outRel = relDir === '.'
-        ? path.join('Contents', htmlName)
-        : path.join('Contents', relDir, htmlName);
-      previewLines.push(`    ${outRel}`);
-    }
-    if (leanFiles.length > maxPreview) {
-      previewLines.push(`    … and ${leanFiles.length - maxPreview} more`);
-    }
+    // Show content subdirectories in the preview
+    const contentDirs = fs.readdirSync(sourceDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && e.name !== '.lake')
+      .map(e => e.name)
+      .sort();
+    const dirPreview = contentDirs.map(d => `      ${d}/`).join('\n');
 
     const confirmMsg = [
       `Source:  ${sourceDir}`,
+      `Project: ${projectName}`,
       `Output:  ${exportRoot}/`,
       `Files:   ${leanFiles.length} .lean file(s)`,
       ``,
       `Output structure:`,
-      `  ${sourceDirName}_Separate_HTML/`,
-      `    _libs/ + Contents/`,
-      `  Viewer.html`,
-      `  ${sourceDirName}_All_in_ONE.html`
+      `  ${projectName}_Separate_HTML/`,
+      `    _libs/`,
+      dirPreview,
+      `  LeanProject/  (source copy, .lake excluded)`,
+      `  LeanProjectViewer.html`,
+      `  ${projectName}_All_in_ONE.html`
     ].join('\n');
 
     const confirmed = await vscode.window.showInformationMessage(
@@ -336,14 +379,14 @@ export async function runHtmlExport(
         fs.mkdirSync(htmlDir, { recursive: true });
         copyLibs(extensionUri, htmlDir);
 
-        const contentsDir = path.join(htmlDir, 'Contents');
+        const contentsDir = htmlDir;
         let exported = 0;
         let failed = 0;
         for (const leanFilePath of leanFiles) {
           const rel = path.relative(sourceDir, leanFilePath);
           progress.report({
             message: `(${exported + 1}/${leanFiles.length}) ${rel}`,
-            increment: 80 / leanFiles.length
+            increment: 70 / leanFiles.length
           });
           try {
             await exportSingleFile(extensionUri, leanFilePath, contentsDir, sourceDir, htmlDir);
@@ -354,11 +397,20 @@ export async function runHtmlExport(
           }
         }
 
-        // --- Lean Viewer export (single self-contained file) ---
-        progress.report({ message: 'Generating Viewer.html…', increment: 5 });
+        // --- Copy Lean project (excluding .lake) ---
+        progress.report({ message: 'Copying Lean project…', increment: 5 });
         try {
-          const viewerHtml = buildViewerHtml(extensionUri, sourceDirName);
-          fs.writeFileSync(path.join(exportRoot, 'Viewer.html'), viewerHtml, 'utf8');
+          const leanProjectDir = path.join(exportRoot, 'LeanProject');
+          copyProjectFiles(sourceDir, leanProjectDir);
+        } catch (e) {
+          console.error('Lean project copy failed:', e);
+        }
+
+        // --- Lean Viewer export (single self-contained file) ---
+        progress.report({ message: 'Generating LeanProjectViewer.html…', increment: 5 });
+        try {
+          const viewerHtml = buildViewerHtml(extensionUri, projectName);
+          fs.writeFileSync(path.join(exportRoot, 'LeanProjectViewer.html'), viewerHtml, 'utf8');
         } catch (e) {
           console.error('Lean Viewer export failed:', e);
         }
@@ -366,8 +418,8 @@ export async function runHtmlExport(
         // --- All-in-ONE export ---
         progress.report({ message: 'Generating All-in-ONE…', increment: 5 });
         try {
-          const allInOneHtml = buildAllInOneHtml(extensionUri, sourceDir, sourceDirName);
-          const allInOnePath = path.join(exportRoot, sourceDirName + '_All_in_ONE.html');
+          const allInOneHtml = buildAllInOneHtml(extensionUri, sourceDir, projectName);
+          const allInOnePath = path.join(exportRoot, projectName + '_All_in_ONE.html');
           fs.writeFileSync(allInOnePath, allInOneHtml, 'utf8');
         } catch (e) {
           console.error('All-in-ONE export failed:', e);
@@ -446,9 +498,11 @@ document.getElementById('dir-input').addEventListener('change', function(e) {
   leanFiles = [];
   var pending = [];
   for (var i = 0; i < files.length; i++) {
-    if (files[i].name.endsWith('.lean')) {
-      pending.push(files[i]);
-    }
+    if (!files[i].name.endsWith('.lean')) continue;
+    // Skip root-level project files — only include .lean files inside subdirectories
+    var rel = files[i].webkitRelativePath.split('/').slice(1).join('/');
+    if (rel.indexOf('/') < 0) continue;
+    pending.push(files[i]);
   }
   var loaded = 0;
   if (pending.length === 0) { alert('No .lean files found.'); return; }
@@ -652,7 +706,7 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
   const esc = (s: string) => s.replace(/<\/script>/gi, '<\\/script>');
 
   // Embed all .lean files
-  const leanFiles = findLeanFiles(sourceDir);
+  const leanFiles = findContentLeanFiles(sourceDir);
   leanFiles.sort((a, b) => a.localeCompare(b));
   const leanScriptTags: string[] = [];
   for (const lf of leanFiles) {
