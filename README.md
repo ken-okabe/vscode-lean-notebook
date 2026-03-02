@@ -37,12 +37,13 @@ Click the **Export** button (or run `LeanNotebook: HTML Export` from the Command
 
 #### Single File Export
 
-Select **"Export current file"** — creates a self-contained directory:
+Select **"Export current file"** — creates a **single self-contained HTML file** with all rendering libraries inlined:
+
 ```
-FileName/
-  index.html        ← open in browser
-  _libs/            ← rendering libraries
+FileName_lean.html   ← open in browser (no external files needed)
 ```
+
+No `_libs/` folder is created. The file is completely standalone and can be shared as a single attachment.
 
 #### Directory Export (Lean Project)
 
@@ -108,7 +109,7 @@ The VS Code WebView and all exported HTML use the **exact same files**:
 | `media/_libs/mermaid.min.js` | Mermaid diagram rendering |
 | `media/_libs/viz-standalone.js` | Graphviz DOT rendering |
 
-All environments — Extension, Separate HTML, LeanProjectViewer, All-in-ONE — load the same renderer, styles, and libraries. Rendering output is identical everywhere.
+All environments — Extension, Single File HTML, Separate HTML, LeanProjectViewer, All-in-ONE — load the same renderer, styles, and libraries. Rendering output is identical everywhere.
 
 ### Library Versions
 

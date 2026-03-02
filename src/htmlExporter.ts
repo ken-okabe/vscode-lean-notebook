@@ -147,9 +147,171 @@ function findContentLeanFiles(dir: string): string[] {
 }
 
 /**
+ * Build a completely self-contained single-file HTML for one .lean file.
+ * Uses the same All-in-ONE approach: all libraries inlined, lean source embedded.
+ * No sidebar (only one file, so no file list needed).
+ */
+function buildSingleFileHtml(extensionUri: vscode.Uri, leanFilePath: string): string {
+  const mediaDir = vscode.Uri.joinPath(extensionUri, 'media').fsPath;
+  const libsDir = path.join(mediaDir, '_libs');
+
+  // Read libraries
+  const readLib = (p: string) => fs.readFileSync(p, 'utf8');
+  const markedJs = readLib(path.join(libsDir, 'marked.min.js'));
+  const mermaidJs = readLib(path.join(libsDir, 'mermaid.min.js'));
+  const vizJs = readLib(path.join(libsDir, 'viz-standalone.js'));
+  const texSvgJs = readLib(path.join(libsDir, 'tex-svg.js'));
+  const rendererJs = readLib(path.join(mediaDir, 'renderer.js'));
+  const styleCss = readLib(path.join(mediaDir, 'style.css'));
+
+  // MathJax config
+  const mathJaxConfigJson = extractMathJaxConfig(rendererJs);
+
+  // Escape </script> in all inlined JS
+  const esc = (s: string) => s.replace(/<\/script>/gi, '<\\/script>');
+
+  // Embed the single .lean file
+  const fileName = path.basename(leanFilePath);
+  const fileTitle = path.basename(leanFilePath, '.lean');
+  const leanContent = esc(fs.readFileSync(leanFilePath, 'utf8'));
+  const leanScriptTag =
+    '<script type="text/x-lean-source" data-path="' +
+    fileName.replace(/"/g, '&quot;') + '">' + leanContent + '<' + '/script>';
+
+  // Viewer JS — reads from the single embedded <script type="text/x-lean-source"> tag.
+  // No sidebar (only one file), auto-loads immediately.
+  const viewerJs = `
+var leanFiles = [];
+var currentIndex = -1;
+
+(function boot() {
+  var tags = document.querySelectorAll('script[type="text/x-lean-source"]');
+  for (var i = 0; i < tags.length; i++) {
+    leanFiles.push({ path: tags[i].getAttribute('data-path'), name: tags[i].getAttribute('data-path').split('/').pop(), content: tags[i].textContent });
+  }
+  if (leanFiles.length === 0) return;
+  loadFile(0);
+})();
+
+function loadFile(index) {
+  currentIndex = index;
+  var f = leanFiles[index];
+  if (typeof marked !== 'undefined') { marked.use({ gfm: true, breaks: true }); }
+  var nb = document.getElementById('notebook');
+  nb.innerHTML = '';
+  var rawPre = document.getElementById('lean-raw-pre');
+  rawPre.innerHTML = hlLean(f.content);
+  var blocks = parseLean(f.content);
+  renderBlocksSeq(blocks, nb, 0, function() {
+    var tocHtml = '', hi = 0;
+    var headings = nb.querySelectorAll('h1,h2,h3');
+    for (var h = 0; h < headings.length; h++) {
+      var id = 'h' + hi++; headings[h].id = id;
+      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\\n';
+    }
+    document.getElementById('toc').innerHTML = tocHtml;
+    var h1 = nb.querySelector('h1');
+    if (h1) {
+      document.getElementById('doc-title').textContent = h1.textContent;
+      document.title = h1.textContent + ' \\u2014 Lean Notebook';
+    } else {
+      document.getElementById('doc-title').textContent = f.name;
+      document.title = f.name + ' \\u2014 Lean Notebook';
+    }
+    typesetMath(nb);
+  });
+  document.getElementById('notebook').style.display = '';
+  document.getElementById('lean-raw').style.display = 'none';
+  document.getElementById('vhtml').checked = true;
+}
+
+function renderBlocksSeq(blocks, nb, i, done) {
+  if (i >= blocks.length) { done(); return; }
+  var b = blocks[i];
+  if (b.type === 'module-doc' || b.type === 'doc-comment') {
+    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+    var el = document.createElement('div');
+    el.className = cls;
+    el.innerHTML = mdToHtml(b.content);
+    var codes = el.querySelectorAll('pre code');
+    for (var c = 0; c < codes.length; c++) {
+      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
+        codes[c].innerHTML = hlLean(codes[c].textContent || '');
+      }
+    }
+    nb.appendChild(el);
+    renderBlocksSeq(blocks, nb, i + 1, done);
+  } else if (b.type === 'code') {
+    var el2 = document.createElement('div');
+    el2.className = 'block-code';
+    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
+    nb.appendChild(el2);
+    renderBlocksSeq(blocks, nb, i + 1, done);
+  } else if (b.type === 'mermaid') {
+    var wrap = document.createElement('div');
+    wrap.className = 'block-mermaid';
+    nb.appendChild(wrap);
+    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
+  } else if (b.type === 'graphviz') {
+    var wrap2 = document.createElement('div');
+    wrap2.className = 'block-graphviz';
+    nb.appendChild(wrap2);
+    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
+  } else {
+    renderBlocksSeq(blocks, nb, i + 1, done);
+  }
+}
+
+document.querySelectorAll('input[name="view"]').forEach(function(radio) {
+  radio.addEventListener('change', function() {
+    var nb = document.getElementById('notebook');
+    var leanRaw = document.getElementById('lean-raw');
+    if (radio.value === 'lean') { nb.style.display = 'none'; leanRaw.style.display = 'block'; }
+    else { nb.style.display = ''; leanRaw.style.display = 'none'; }
+  });
+});
+`;
+
+  // Build the complete HTML (no sidebar, no landing screen)
+  const html = [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="UTF-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '<title>' + fileTitle + ' — Lean Notebook</title>',
+    '<script>MathJax = ' + mathJaxConfigJson + ';<' + '/script>',
+    '<script>' + esc(texSvgJs) + '<' + '/script>',
+    '<script>' + esc(markedJs) + '<' + '/script>',
+    '<script>' + esc(mermaidJs) + '<' + '/script>',
+    '<script>' + esc(vizJs) + '<' + '/script>',
+    '<style>' + styleCss + '</style>',
+    '</head>',
+    '<body>',
+    // Embedded lean source
+    leanScriptTag,
+    // App shell (no book-sidebar)
+    '<div id="app">',
+    '<div id="topbar"><div class="logo">lean<span> notebook</span></div><div class="sep">\u00b7</div><div class="doc-title" id="doc-title"></div>',
+    '<div id="view-toggle"><input type="radio" name="view" id="vlean" value="lean"><label for="vlean">lean</label><input type="radio" name="view" id="vhtml" value="html" checked><label for="vhtml">HTML</label></div></div>',
+    '<nav id="sidebar"><div id="toc-label">Contents</div><div id="toc"></div></nav>',
+    '<main id="notebook"></main>',
+    '<div id="lean-raw"><pre id="lean-raw-pre"></pre></div>',
+    '</div>',
+    // Scripts
+    '<script>' + esc(rendererJs) + '<' + '/script>',
+    '<script>' + esc(viewerJs) + '<' + '/script>',
+    '</body>',
+    '</html>'
+  ].join('\n');
+
+  return html;
+}
+
+/**
  * Export a single .lean file.
- * - If sourceRoot is undefined (single-file mode): creates FileName/ directory
- *   containing index.html + _libs/.
+ * - If sourceRoot is undefined (single-file mode): creates a self-contained
+ *   FileName_lean.html (all libraries inlined, no external _libs/ needed).
  * - If sourceRoot is provided (batch mode): places HTML in the appropriate
  *   relative path under outputDir. libsRoot is the dir that contains _libs/.
  */
@@ -160,37 +322,36 @@ async function exportSingleFile(
   sourceRoot?: string,
   libsRoot?: string
 ): Promise<string> {
-  const leanSource = fs.readFileSync(leanFilePath, 'utf8');
-
-  let targetDir: string;
-  let libsRelPath = './_libs';
-
   if (sourceRoot) {
     // Batch mode: preserve directory structure relative to sourceRoot
+    const leanSource = fs.readFileSync(leanFilePath, 'utf8');
     const relDir = path.relative(sourceRoot, path.dirname(leanFilePath));
-    targetDir = path.join(outputDir, relDir);
+    const targetDir = path.join(outputDir, relDir);
 
     // Compute relative path from targetDir to _libs/ (which is in libsRoot)
+    let libsRelPath = './_libs';
     if (libsRoot) {
       const relToLibs = path.relative(targetDir, path.join(libsRoot, '_libs'));
       libsRelPath = relToLibs.split(path.sep).join('/');
     }
-  } else {
-    // Single-file mode: create FileName/ directory
-    const dirName = path.basename(leanFilePath, '.lean');
-    targetDir = path.join(outputDir, dirName);
-    // Copy _libs/ into this directory
+
+    const html = buildHtml(extensionUri, leanSource, libsRelPath);
     fs.mkdirSync(targetDir, { recursive: true });
-    copyLibs(extensionUri, targetDir);
+
+    const htmlFileName = toHtmlFileName(leanFilePath);
+    const outputPath = uniqueOutputPath(targetDir, htmlFileName);
+    fs.writeFileSync(outputPath, html, 'utf8');
+    return outputPath;
+  } else {
+    // Single-file mode: self-contained HTML with all libraries inlined
+    const html = buildSingleFileHtml(extensionUri, leanFilePath);
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const htmlFileName = toHtmlFileName(leanFilePath);
+    const outputPath = uniqueOutputPath(outputDir, htmlFileName);
+    fs.writeFileSync(outputPath, html, 'utf8');
+    return outputPath;
   }
-
-  const html = buildHtml(extensionUri, leanSource, libsRelPath);
-  fs.mkdirSync(targetDir, { recursive: true });
-
-  const htmlFileName = sourceRoot ? toHtmlFileName(leanFilePath) : 'index.html';
-  const outputPath = uniqueOutputPath(targetDir, htmlFileName);
-  fs.writeFileSync(outputPath, html, 'utf8');
-  return outputPath;
 }
 
 /**
@@ -248,18 +409,17 @@ export async function runHtmlExport(
     if (!outputDirResult || outputDirResult.length === 0) return;
     const outputDir = outputDirResult[0].fsPath;
 
-    const dirName = path.basename(leanFilePath, '.lean');
-    const exportDir = path.join(outputDir, dirName);
+    const fileTitle = path.basename(leanFilePath, '.lean');
+    const outputFileName = `${fileTitle}_lean.html`;
 
     // --- Confirmation ---
     const confirmMsg = [
       `Source:  ${leanFilePath}`,
-      `Output:  ${exportDir}/`,
-      `         index.html + _libs/`
+      `Output:  ${path.join(outputDir, outputFileName)}`
     ].join('\n');
 
     const confirmed = await vscode.window.showInformationMessage(
-      `Export this file as HTML?\n\n${confirmMsg}`,
+      `Export this file as a self-contained HTML?\n\n${confirmMsg}`,
       { modal: true },
       'Export'
     );
@@ -268,7 +428,7 @@ export async function runHtmlExport(
     try {
       const finalPath = await exportSingleFile(extensionUri, leanFilePath, outputDir);
       vscode.window.showInformationMessage(
-        `HTML Export complete: ${dirName}/index.html`,
+        `HTML Export complete: ${outputFileName}`,
         'Open in Browser'
       ).then(sel => {
         if (sel === 'Open in Browser') {
