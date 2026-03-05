@@ -491,11 +491,9 @@ body {
   color: var(--text);
 }
 
-.block-module-doc tr:nth-child(even) td,
-.block-doc-comment tr:nth-child(even) td,
-.block-doc-comment tr:nth-child(even) td,
-.block-doc-comment tr:nth-child(even) td {
-  background: #f0f5fd;
+.block-module-doc td:has(> img:only-child),
+.block-doc-comment td:has(> img:only-child) {
+  padding: 0;
 }
 
 /* Blockquotes */
@@ -762,4 +760,35 @@ h6 {
   font-family: var(--font-code);
   white-space: pre-wrap;
   font-size: 13px;
+}
+
+/* ================================================================
+   SVG Output from #eval
+   ================================================================ */
+.lean-svg-output {
+  text-align: center;
+  margin: 0;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.lean-svg-output svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Text output from #eval (non-SVG parts) */
+.lean-eval-text {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  background: var(--surface-alt);
+}
+
+.lean-eval-text pre {
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: 0.85em;
+  color: var(--text);
+  white-space: pre-wrap;
 }

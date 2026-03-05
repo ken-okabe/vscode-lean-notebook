@@ -67,19 +67,22 @@ try {
                         // Update outputs if needed
                         if (JSON.stringify(block.outputs) !== JSON.stringify(cached.block.outputs)) {
                             console.log(`[App] Updating outputs for block ${block.id}`);
-                            // Delegate update to component (if it exposes method)
-                            // Or just replace it? Replacing is safer for "Zero-Base" correctness.
-                            // But we want to avoid re-highlighting if possible?
-                            // Actually, reusing the DOM and just appending output nodes is better.
-                            // For this rewrite, let's allow "re-render" of the component if props change,
-                            // but since ID is stable, we know it's the *same* block conceptually.
-
-                            // If we replace it, we lose scroll state (semantics). 
-                            // Let's replace for correctness first. 
-                            // Cleanup old
                             if (cached.controller) cached.controller.abort();
+                            const controller = new AbortController();
+                            const dom = renderBlock(block, controller.signal);
+                            componentCache.set(block.id, { dom, block, controller });
+                            newChildren.push(dom);
+                            continue;
+                        }
+                    }
 
-                            // Create new
+                    // SVG file blocks: re-render when content becomes available or changes
+                    if (block.type === 'svg-file') {
+                        const oldContent = cached.block.content;
+                        const newContent = block.content;
+                        if (oldContent !== newContent) {
+                            console.log(`[App] SVG content changed for block ${block.id}`);
+                            if (cached.controller) cached.controller.abort();
                             const controller = new AbortController();
                             const dom = renderBlock(block, controller.signal);
                             componentCache.set(block.id, { dom, block, controller });
@@ -135,6 +138,7 @@ try {
             case 'doc-comment': return MarkdownComponent(block.content, signal, "block-doc-comment");
             case 'mermaid': return MermaidComponent(block.content || block.source, signal);
             case 'graphviz': return GraphvizComponent(block.content || block.source, signal);
+            case 'svg-file': return SvgFileComponent(block, signal);
             default: return div(`Unknown block type: ${block.type}`);
         }
     }
@@ -187,26 +191,39 @@ try {
         const source = block.source;
         const outputs = block.outputs || [];
 
-        // Construct display text
+        // Separate outputs into inline (interleaved in code) and rich (rendered after code)
+        const inlineOutputs = [];
+        const richOutputs = [];
+        outputs.forEach(o => {
+            if (o.severity === -1) {
+                // Proof status — always inline
+                inlineOutputs.push(o);
+            } else if (typeof hasEvalSVG === 'function' && hasEvalSVG(o.content)) {
+                // Contains SVG markers — render as rich output after code block
+                richOutputs.push(o);
+            } else {
+                // Plain text — inline
+                inlineOutputs.push(o);
+            }
+        });
+
+        // Construct display text with inline outputs only
         const lines = source.split(/\r?\n/);
         const resultLines = [];
 
-        // Map outputs to lines (keep full output objects for severity-based rendering)
-        const outputsByLine = new Map();
-        outputs.forEach(o => {
-            if (!outputsByLine.has(o.line)) outputsByLine.set(o.line, []);
-            outputsByLine.get(o.line).push(o);
+        const inlineByLine = new Map();
+        inlineOutputs.forEach(o => {
+            if (!inlineByLine.has(o.line)) inlineByLine.set(o.line, []);
+            inlineByLine.get(o.line).push(o);
         });
 
         for (let i = 0; i < lines.length; i++) {
             resultLines.push(lines[i]);
-            if (outputsByLine.has(i)) {
-                outputsByLine.get(i).forEach(out => {
+            if (inlineByLine.has(i)) {
+                inlineByLine.get(i).forEach(out => {
                     if (out.severity === -1) {
-                        // Proof status (theorem/lemma/example verified)
                         resultLines.push(`-- ✓`);
                     } else {
-                        // Eval result
                         resultLines.push(`-- Evaluated: ${out.content}`);
                     }
                 });
@@ -221,6 +238,28 @@ try {
         const preEl = pre({ class: "lean-source" });
         preEl.innerHTML = hlLean(displaySource);
         const dom = div({ class: "block-code" }, header, preEl);
+
+        // Render rich outputs (SVG-containing) after the code block
+        if (richOutputs.length > 0 && typeof parseEvalOutput === 'function') {
+            for (const out of richOutputs) {
+                const segments = parseEvalOutput(out.content);
+                for (const seg of segments) {
+                    if (seg.type === 'svg') {
+                        const svgDiv = document.createElement('div');
+                        svgDiv.className = 'lean-svg-output';
+                        svgDiv.innerHTML = seg.content;
+                        dom.appendChild(svgDiv);
+                    } else {
+                        const textDiv = document.createElement('div');
+                        textDiv.className = 'lean-eval-text';
+                        const textPre = document.createElement('pre');
+                        textPre.textContent = seg.content;
+                        textDiv.appendChild(textPre);
+                        dom.appendChild(textDiv);
+                    }
+                }
+            }
+        }
 
         return dom;
     };
@@ -247,6 +286,21 @@ try {
         }, 0);
 
         return dom;
+    };
+
+    const SvgFileComponent = (block, signal) => {
+        if (block.content) {
+            const dom = div({ class: "lean-svg-output" });
+            dom.innerHTML = block.content;
+            return dom;
+        } else {
+            const dom = div({ class: "lean-svg-output" });
+            dom.style.color = '#94a3b8';
+            dom.style.fontStyle = 'italic';
+            dom.style.fontSize = '0.85em';
+            dom.textContent = `SVG not found: ${block.path || 'unknown'} — run lake build to generate`;
+            return dom;
+        }
     };
 
     // --- Initialization ---

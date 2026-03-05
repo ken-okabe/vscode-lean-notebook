@@ -280,6 +280,51 @@ function typesetMath(container) {
     return Promise.resolve();
 }
 
+// ----------------------------------------------------------------
+// #eval output parser — detect ```svg markers and split into segments.
+// Returns: [{ type: 'text', content: '...' }, { type: 'svg', content: '<svg ...>' }, ...]
+// Single source of truth for SVG detection (used by WebView + HTML export).
+// ----------------------------------------------------------------
+function parseEvalOutput(text) {
+    // Note: backticks written as \x60 to avoid breaking HTML script-tag embedding
+    const TICK3 = '\x60\x60\x60';
+    const re = new RegExp(TICK3 + 'svg\\n([\\s\\S]*?)\\n' + TICK3, 'g');
+    const segments = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = re.exec(text)) !== null) {
+        // Text before this SVG block
+        const before = text.substring(lastIndex, match.index);
+        if (before.trim().length > 0) {
+            segments.push({ type: 'text', content: before.trim() });
+        }
+        // SVG content
+        const svgContent = match[1].trim();
+        if (svgContent.length > 0) {
+            segments.push({ type: 'svg', content: svgContent });
+        }
+        lastIndex = re.lastIndex;
+    }
+    // Remaining text after last SVG block
+    if (lastIndex < text.length) {
+        const remaining = text.substring(lastIndex);
+        if (remaining.trim().length > 0) {
+            segments.push({ type: 'text', content: remaining.trim() });
+        }
+    }
+    // If no markers found at all, return the whole text as one segment
+    if (segments.length === 0 && text.trim().length > 0) {
+        segments.push({ type: 'text', content: text.trim() });
+    }
+    return segments;
+}
+
+// Check if an output string contains SVG markers
+function hasEvalSVG(text) {
+    const TICK3 = '\x60\x60\x60';
+    return text.indexOf(TICK3 + 'svg\n') !== -1;
+}
+
 // The canonical MathJax configuration object.
 // Used verbatim in both NotebookPanel.ts (Extension) and template.html (HTML export).
 const MATHJAX_CONFIG = {
@@ -406,6 +451,7 @@ function splitLeanDocComments(text) {
         if (b.type === 'code') return b.source.trim().length > 0;
         if (b.type === 'mermaid') return b.source.trim().length > 0;
         if (b.type === 'graphviz') return b.source.trim().length > 0;
+        if (b.type === 'svg-file') return b.path.trim().length > 0;
         return b.content.trim().length > 0;
     });
 }
@@ -414,21 +460,39 @@ function splitDiagramBlocks(content) {
     const result = [];
     // Note: backticks written as \x60 to avoid breaking HTML script-tag embedding
     const TICK3 = '\x60\x60\x60';
-    const re = new RegExp('^' + TICK3 + '(mermaid|graphviz|dot)\\s*\\n([\\s\\S]*?)^' + TICK3 + '\\s*$', 'gm');
-    let lastIndex = 0, match;
-    while ((match = re.exec(content)) !== null) {
-        const textContent = content.substring(lastIndex, match.index);
+    const diagramRe = new RegExp('^' + TICK3 + '(mermaid|graphviz|dot)\\s*\\n([\\s\\S]*?)^' + TICK3 + '\\s*$', 'gm');
+    const svgRe = /^@svg\s+(.+)$/gm;
+
+    // Collect all matches with positions
+    var matches = [];
+    var match;
+    while ((match = diagramRe.exec(content)) !== null) {
+        var lang = match[1];
+        var blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
+        matches.push({ index: match.index, end: diagramRe.lastIndex, type: blockType, data: match[2] });
+    }
+    while ((match = svgRe.exec(content)) !== null) {
+        matches.push({ index: match.index, end: svgRe.lastIndex, type: 'svg-file', data: match[1].trim() });
+    }
+    matches.sort(function (a, b) { return a.index - b.index; });
+
+    var lastIndex = 0;
+    for (var i = 0; i < matches.length; i++) {
+        var m = matches[i];
+        var textContent = content.substring(lastIndex, m.index);
         if (textContent.trim().length > 0) result.push({ type: 'text', content: textContent.trim() });
-        const lang = match[1]; // 'mermaid', 'graphviz', or 'dot'
-        const src = match[2];
-        if (src.trim().length > 0) {
-            const blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
-            result.push({ type: blockType, source: trimEmptyLines(src) });
+
+        if (m.type === 'svg-file') {
+            result.push({ type: 'svg-file', path: m.data });
+        } else {
+            if (m.data.trim().length > 0) {
+                result.push({ type: m.type, source: trimEmptyLines(m.data) });
+            }
         }
-        lastIndex = re.lastIndex;
+        lastIndex = m.end;
     }
     if (lastIndex < content.length) {
-        const remaining = content.substring(lastIndex);
+        var remaining = content.substring(lastIndex);
         if (remaining.trim().length > 0) result.push({ type: 'text', content: remaining.trim() });
     }
     if (result.length === 0 && content.trim().length > 0)
@@ -440,11 +504,29 @@ function expandCommentBlock(block) {
     if (block.type !== 'module-doc' && block.type !== 'doc-comment') return [block];
     const subBlocks = splitDiagramBlocks(block.content);
     if (subBlocks.length === 1 && subBlocks[0].type === 'text') return [block];
-    return subBlocks.map(sub =>
-        sub.type === 'text'
-            ? { type: block.type, content: sub.content, range: block.range }
-            : { type: sub.type, source: sub.source, range: block.range }
-    );
+    return subBlocks.map(sub => {
+        if (sub.type === 'text') return { type: block.type, content: sub.content, range: block.range };
+        if (sub.type === 'svg-file') return { type: 'svg-file', path: sub.path, range: block.range };
+        return { type: sub.type, source: sub.source, range: block.range };
+    });
+}
+
+/**
+ * Replace inline @svg markers in markdown content with base64 <img> tags.
+ * Used for @svg inside table cells which splitDiagramBlocks can't extract.
+ * @param {string} content - markdown content
+ * @param {Object} svgData - map of filename -> SVG string
+ * @returns {string} content with @svg replaced
+ */
+function inlineSvgMarkers(content, svgData) {
+    if (!svgData || !content) return content;
+    return content.replace(/@svg\s+([\w.\-]+)/g, function (_m, filename) {
+        var svg = svgData[filename.trim()];
+        if (svg) {
+            return '<img src="data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg))) + '" alt="' + filename.trim() + '" style="max-width:100%">';
+        }
+        return '*SVG not found: ' + filename.trim() + '*';
+    });
 }
 
 function parseLean(text) {

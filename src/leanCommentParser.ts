@@ -5,7 +5,8 @@ export type LeanLexBlock =
   | { type: 'module-doc'; content: string; range: { startLine: number; endLine: number } }
   | { type: 'doc-comment'; content: string; range: { startLine: number; endLine: number } }
   | { type: 'mermaid'; source: string; range: { startLine: number; endLine: number } }
-  | { type: 'graphviz'; source: string; range: { startLine: number; endLine: number } };
+  | { type: 'graphviz'; source: string; range: { startLine: number; endLine: number } }
+  | { type: 'svg-file'; path: string; range: { startLine: number; endLine: number } };
 
 /**
  * Lexically split a Lean file into:
@@ -69,6 +70,7 @@ export function splitLeanDocComments(text: string, document?: vscode.TextDocumen
     if (b.type === 'code') return b.source.trim().length > 0;
     if (b.type === 'mermaid') return b.source.trim().length > 0;
     if (b.type === 'graphviz') return b.source.trim().length > 0;
+    if (b.type === 'svg-file') return b.path.trim().length > 0;
     return b.content.trim().length > 0;
   });
 
@@ -176,35 +178,54 @@ function trimEmptyLines(code: string): string {
 type SubBlock =
   | { type: 'text'; content: string }
   | { type: 'mermaid'; source: string }
-  | { type: 'graphviz'; source: string };
+  | { type: 'graphviz'; source: string }
+  | { type: 'svg-file'; path: string };
 
 function splitDiagramBlocks(content: string): SubBlock[] {
   const result: SubBlock[] = [];
   // Match fenced code blocks: ```mermaid, ```graphviz, or ```dot
+  // Also match @svg directives on their own line
   const codeBlockRegex = /^```(mermaid|graphviz|dot)\s*\n([\s\S]*?)^```\s*$/gm;
+  const svgDirectiveRegex = /^@svg\s+(.+)$/gm;
+
+  // Collect all matches with positions
+  interface MatchInfo { index: number; end: number; type: string; data: string; }
+  const matches: MatchInfo[] = [];
+
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    const lang = match[1];
+    const blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
+    matches.push({ index: match.index, end: codeBlockRegex.lastIndex, type: blockType, data: match[2] });
+  }
+  while ((match = svgDirectiveRegex.exec(content)) !== null) {
+    matches.push({ index: match.index, end: svgDirectiveRegex.lastIndex, type: 'svg-file', data: match[1].trim() });
+  }
+
+  // Sort by position
+  matches.sort((a, b) => a.index - b.index);
 
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    // Text before this diagram block
-    const textContent = content.substring(lastIndex, match.index);
+  for (const m of matches) {
+    // Text before this match
+    const textContent = content.substring(lastIndex, m.index);
     if (textContent.trim().length > 0) {
       result.push({ type: 'text', content: textContent.trim() });
     }
 
-    // The diagram block itself
-    const lang = match[1]; // 'mermaid', 'graphviz', or 'dot'
-    const diagramSource = match[2];
-    if (diagramSource.trim().length > 0) {
-      const blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
-      result.push({ type: blockType, source: trimEmptyLines(diagramSource) } as SubBlock);
+    if (m.type === 'svg-file') {
+      result.push({ type: 'svg-file', path: m.data });
+    } else {
+      // Diagram block (mermaid or graphviz)
+      if (m.data.trim().length > 0) {
+        result.push({ type: m.type as 'mermaid' | 'graphviz', source: trimEmptyLines(m.data) });
+      }
     }
 
-    lastIndex = codeBlockRegex.lastIndex;
+    lastIndex = m.end;
   }
 
-  // Remaining text after last diagram block
+  // Remaining text after last match
   if (lastIndex < content.length) {
     const remaining = content.substring(lastIndex);
     if (remaining.trim().length > 0) {
@@ -212,7 +233,7 @@ function splitDiagramBlocks(content: string): SubBlock[] {
     }
   }
 
-  // If no diagram blocks found, return original content
+  // If no special blocks found, return original content
   if (result.length === 0 && content.trim().length > 0) {
     result.push({ type: 'text', content: content.trim() });
   }
@@ -245,6 +266,12 @@ export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
         content: sub.content,
         range: block.range // Use same range (approximate)
       });
+    } else if (sub.type === 'svg-file') {
+      result.push({
+        type: 'svg-file',
+        path: sub.path,
+        range: block.range
+      } as LeanLexBlock);
     } else {
       result.push({
         type: sub.type, // 'mermaid' or 'graphviz'

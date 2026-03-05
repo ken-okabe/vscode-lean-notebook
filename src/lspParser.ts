@@ -1,10 +1,12 @@
+import * as fs from 'fs';
+import * as pathModule from 'path';
 import * as vscode from 'vscode';
 import { generateBlockId } from './utils/hashing';
 
 import { splitLeanDocComments, expandCommentBlock } from './leanCommentParser';
 import { leanLspManager } from './leanLspClient';
 
-export type NotebookBlock = (ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock | GraphvizBlock) & { id: string };
+export type NotebookBlock = (ModuleDocBlock | DocCommentBlock | CodeBlock | MermaidBlock | GraphvizBlock | SvgFileBlock) & { id: string };
 
 export interface MermaidBlock {
     type: 'mermaid';
@@ -60,6 +62,16 @@ export interface CodeBlock {
     };
 }
 
+export interface SvgFileBlock {
+    type: 'svg-file';
+    path: string;
+    content?: string;
+    range: {
+        startLine: number;
+        endLine: number;
+    };
+}
+
 /**
  * Build notebook blocks for a Lean4 file.
 // ... (omitting unchanged comments for brevity if possible, but tool requires context match)
@@ -102,7 +114,11 @@ export async function parseLeanFileWithLSP(
         // Generate Stable ID
         // key = type + content
         // We accumulate occurrences to distinguish identical blocks
-        const contentKey = b.type === 'code' || b.type === 'mermaid' || b.type === 'graphviz' ? b.source : b.content;
+        const contentKey = b.type === 'code' || b.type === 'mermaid' || b.type === 'graphviz'
+            ? b.source
+            : b.type === 'svg-file'
+                ? (b as any).path
+                : b.content;
         const key = `${b.type}:${contentKey}`;
         const count = occurrenceMap.get(key) || 0;
         occurrenceMap.set(key, count + 1);
@@ -120,6 +136,9 @@ export async function parseLeanFileWithLSP(
         }
         if (b.type === 'graphviz') {
             return { type: 'graphviz', source: b.source, range: b.range, id };
+        }
+        if (b.type === 'svg-file') {
+            return { type: 'svg-file', path: (b as any).path, range: b.range, id };
         }
         return { type: 'doc-comment', content: b.content, range: b.range, id };
     });
@@ -146,6 +165,14 @@ export async function parseLeanFileWithLSP(
 
     // Phase 3: Attach diagnostics (execution results like #eval) to code blocks.
     await attachDiagnostics(document, blocks);
+
+    // Phase 4: Load SVG file content for svg-file blocks.
+    await loadSvgFiles(document, blocks);
+
+    // Phase 5: Inline SVG replacement for @svg markers inside markdown content
+    // (e.g. inside table cells where splitDiagramBlocks doesn't extract them)
+    inlineSvgContent(document, blocks);
+
     return blocks;
 }
 
@@ -219,6 +246,97 @@ export async function attachDiagnostics(
         if (outputs.length > 0) {
             console.log(`[attachDiagnostics] Attached ${outputs.length} outputs to code block at lines ${block.range.startLine}-${block.range.endLine}`);
             block.outputs = outputs;
+        }
+    }
+}
+
+/**
+ * Find the nearest lake project root for a document.
+ * Walks up from the document's directory looking for lakefile.lean or lakefile.toml.
+ */
+function findLakeRoot(docPath: string): string | null {
+    let dir = pathModule.dirname(docPath);
+    while (true) {
+        if (fs.existsSync(pathModule.join(dir, 'lakefile.lean')) ||
+            fs.existsSync(pathModule.join(dir, 'lakefile.toml'))) {
+            return dir;
+        }
+        const parent = pathModule.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return null;
+}
+
+/**
+ * Load SVG file content for svg-file blocks.
+ * Resolves paths relative to <lakeRoot>/.lake/svg/.
+ */
+async function loadSvgFiles(
+    document: vscode.TextDocument,
+    blocks: NotebookBlock[]
+): Promise<void> {
+    const svgBlocks = blocks.filter(b => b.type === 'svg-file') as (SvgFileBlock & { id: string })[];
+    if (svgBlocks.length === 0) return;
+
+    const lakeRoot = findLakeRoot(document.uri.fsPath);
+    if (!lakeRoot) {
+        console.warn('[loadSvgFiles] No lake project root found');
+        return;
+    }
+
+    const svgDir = pathModule.join(lakeRoot, '.lake', 'svg');
+
+    for (const block of svgBlocks) {
+        const svgPath = pathModule.join(svgDir, block.path);
+        try {
+            if (fs.existsSync(svgPath)) {
+                block.content = fs.readFileSync(svgPath, 'utf8');
+                console.log(`[loadSvgFiles] Loaded: ${block.path}`);
+            } else {
+                console.log(`[loadSvgFiles] Not found: ${svgPath}`);
+                block.content = undefined;
+            }
+        } catch (e) {
+            console.error(`[loadSvgFiles] Error reading ${svgPath}:`, e);
+            block.content = undefined;
+        }
+    }
+}
+
+/**
+ * Replace inline @svg markers in markdown content with base64-encoded img tags.
+ * This handles @svg markers that weren't extracted by splitDiagramBlocks,
+ * e.g. inside table cells: | @svg file.svg | @svg other.svg |
+ * Uses base64 <img> tags instead of raw SVG to avoid breaking markdown table syntax.
+ */
+function inlineSvgContent(
+    document: vscode.TextDocument,
+    blocks: NotebookBlock[]
+): void {
+    const lakeRoot = findLakeRoot(document.uri.fsPath);
+    if (!lakeRoot) return;
+
+    const svgDir = pathModule.join(lakeRoot, '.lake', 'svg');
+    const svgInlineRe = /@svg\s+([\w.\-]+)/g;
+
+    for (const block of blocks) {
+        if ((block.type === 'module-doc' || block.type === 'doc-comment') && (block as any).content) {
+            const content = (block as any).content as string;
+            if (!svgInlineRe.test(content)) continue;
+            svgInlineRe.lastIndex = 0;
+
+            (block as any).content = content.replace(svgInlineRe, (_match: string, filename: string) => {
+                const svgPath = pathModule.join(svgDir, filename.trim());
+                try {
+                    if (fs.existsSync(svgPath)) {
+                        const svgContent = fs.readFileSync(svgPath, 'utf8');
+                        const b64 = Buffer.from(svgContent).toString('base64');
+                        return `<img src="data:image/svg+xml;base64,${b64}" alt="${filename.trim()}" style="max-width:100%">`;
+                    }
+                } catch { /* ignore */ }
+                return `*SVG not found: ${filename.trim()}*`;
+            });
         }
     }
 }

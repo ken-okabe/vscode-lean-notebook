@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
+import { spawn } from 'child_process';
 
 import { parseLeanFileWithLSP } from '../lspParser';
 import { parseMarkdownFile } from '../markdownParser';
@@ -20,6 +22,10 @@ export class NotebookPanel {
     // It sends if and only if BOTH _webviewIsReady AND _currentBlocks are set.
     private _webviewIsReady = false;
     private _currentBlocks: any[] | null = null;
+
+    // SVG state
+    private _svgWatcher: vscode.FileSystemWatcher | undefined;
+    private _svgGenDone = false;
 
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, document: vscode.TextDocument) {
         this._panel = panel;
@@ -133,6 +139,10 @@ export class NotebookPanel {
     public dispose() {
         NotebookPanel.currentPanel = undefined;
         this._panel.dispose();
+        if (this._svgWatcher) {
+            this._svgWatcher.dispose();
+            this._svgWatcher = undefined;
+        }
         while (this._disposables.length) {
             const x = this._disposables.pop();
             if (x) {
@@ -166,6 +176,8 @@ export class NotebookPanel {
         }
     }
 
+    // update-generation counter: prevents data races between sequential _update() calls.
+    // If a newer _update starts, earlier ones silently abort.
     private _updateGeneration = 0;
     private _isUpdating = false;
     private _diagnosticTimer: ReturnType<typeof setTimeout> | null = null;
@@ -213,10 +225,10 @@ export class NotebookPanel {
         this._isUpdating = true;
         this._currentBlocks = null;
 
-        try {
-            const isMarkdown = this._document.languageId === 'markdown' ||
-                this._document.fileName.endsWith('.md');
+        const isMarkdown = this._document.languageId === 'markdown' ||
+            this._document.fileName.endsWith('.md');
 
+        try {
             let blocks: any[];
 
             if (isMarkdown) {
@@ -242,6 +254,115 @@ export class NotebookPanel {
 
         const fileName = this._document.fileName.split(/[/\\]/).pop() || 'Notebook';
         this._panel.title = fileName;
+
+        if (!isMarkdown) {
+            // Set up SVG file watcher if not done yet
+            if (!this._svgWatcher) {
+                this._setupSvgWatcher();
+            }
+            // Run lake exe svg_gen once if @svg blocks are present
+            if (!this._svgGenDone && this._currentBlocks?.some(b => b.type === 'svg-file')) {
+                this._runSvgGen();
+            }
+        }
+    }
+
+    /**
+     * Run `lake exe svg_gen` once to generate SVG files.
+     * Only runs if the lakefile defines an svg_gen target.
+     */
+    private _runSvgGen() {
+        if (this._svgGenDone) return;
+        if (!this._document) return;
+
+        const docPath = this._document.uri.fsPath;
+        const lakeRoot = this._findLakeRoot(docPath);
+        if (!lakeRoot) return;
+
+        // Check if svg_gen executable target exists in lakefile
+        const lakefilePath = path.join(lakeRoot, 'lakefile.lean');
+        const lakefileToml = path.join(lakeRoot, 'lakefile.toml');
+        let hasSvgGen = false;
+        try {
+            if (fs.existsSync(lakefilePath)) {
+                const content = fs.readFileSync(lakefilePath, 'utf8');
+                hasSvgGen = /svg_gen/.test(content);
+            } else if (fs.existsSync(lakefileToml)) {
+                const content = fs.readFileSync(lakefileToml, 'utf8');
+                hasSvgGen = /svg_gen/.test(content);
+            }
+        } catch { /* ignore */ }
+
+        if (!hasSvgGen) {
+            this._svgGenDone = true;
+            return;
+        }
+
+        this._svgGenDone = true;
+        console.log('[NotebookPanel] Running lake exe svg_gen');
+
+        const proc = spawn('lake', ['exe', 'svg_gen'], {
+            cwd: lakeRoot,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stderr = '';
+        proc.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+        proc.on('close', (code) => {
+            if (code === 0) {
+                console.log('[NotebookPanel] lake exe svg_gen succeeded');
+            } else {
+                console.warn(`[NotebookPanel] lake exe svg_gen exited with code ${code}`, stderr.slice(0, 500));
+            }
+            // File watcher will pick up new SVG files and trigger _update
+        });
+
+        proc.on('error', (err) => {
+            console.error('[NotebookPanel] lake exe svg_gen failed to start:', err.message);
+        });
+    }
+
+    /**
+     * Watch .lake/svg/ for changes and refresh SVG blocks.
+     */
+    private _setupSvgWatcher() {
+        if (!this._document) return;
+        const docPath = this._document.uri.fsPath;
+        const lakeRoot = this._findLakeRoot(docPath);
+        if (!lakeRoot) return;
+
+        const svgPattern = new vscode.RelativePattern(lakeRoot, '.lake/svg/**');
+        this._svgWatcher = vscode.workspace.createFileSystemWatcher(svgPattern);
+
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        const refresh = () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                console.log('[NotebookPanel] SVG file changed, refreshing');
+                if (this._document) {
+                    this._update();
+                }
+            }, 500);
+        };
+
+        this._svgWatcher.onDidCreate(refresh);
+        this._svgWatcher.onDidChange(refresh);
+        this._disposables.push(this._svgWatcher);
+    }
+
+    private _findLakeRoot(docPath: string): string | null {
+        let dir = path.dirname(docPath);
+        while (true) {
+            if (fs.existsSync(path.join(dir, 'lakefile.lean')) ||
+                fs.existsSync(path.join(dir, 'lakefile.toml'))) {
+                return dir;
+            }
+            const parent = path.dirname(dir);
+            if (parent === dir) break;
+            dir = parent;
+        }
+        return null;
     }
 
     private _getWebviewContent(webview: vscode.Webview) {
