@@ -270,7 +270,7 @@ function findLakeRoot(docPath: string): string | null {
 
 /**
  * Load SVG file content for svg-file blocks.
- * Resolves paths relative to <lakeRoot>/.lake/svg/.
+ * Resolves paths relative to _svg_<leanFilename>/ directory in the same location as the .lean file.
  */
 async function loadSvgFiles(
     document: vscode.TextDocument,
@@ -279,20 +279,17 @@ async function loadSvgFiles(
     const svgBlocks = blocks.filter(b => b.type === 'svg-file') as (SvgFileBlock & { id: string })[];
     if (svgBlocks.length === 0) return;
 
-    const lakeRoot = findLakeRoot(document.uri.fsPath);
-    if (!lakeRoot) {
-        console.warn('[loadSvgFiles] No lake project root found');
-        return;
-    }
-
-    const svgDir = pathModule.join(lakeRoot, '.lake', 'svg');
+    const docPath = document.uri.fsPath;
+    const docDir = pathModule.dirname(docPath);
+    const docBaseName = pathModule.basename(docPath, '.lean');
+    const svgDir = pathModule.join(docDir, `_svg_${docBaseName}`);
 
     for (const block of svgBlocks) {
         const svgPath = pathModule.join(svgDir, block.path);
         try {
             if (fs.existsSync(svgPath)) {
                 block.content = fs.readFileSync(svgPath, 'utf8');
-                console.log(`[loadSvgFiles] Loaded: ${block.path}`);
+                console.log(`[loadSvgFiles] Loaded: ${block.path} from ${svgDir}`);
             } else {
                 console.log(`[loadSvgFiles] Not found: ${svgPath}`);
                 block.content = undefined;
@@ -314,10 +311,10 @@ function inlineSvgContent(
     document: vscode.TextDocument,
     blocks: NotebookBlock[]
 ): void {
-    const lakeRoot = findLakeRoot(document.uri.fsPath);
-    if (!lakeRoot) return;
-
-    const svgDir = pathModule.join(lakeRoot, '.lake', 'svg');
+    const docPath = document.uri.fsPath;
+    const docDir = pathModule.dirname(docPath);
+    const docBaseName = pathModule.basename(docPath, '.lean');
+    const svgDir = pathModule.join(docDir, `_svg_${docBaseName}`);
     const svgInlineRe = /@svg\s+([\w.\-]+)/g;
 
     for (const block of blocks) {
