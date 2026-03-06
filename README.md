@@ -113,11 +113,12 @@ def wave : String :=
   "<polyline points=\"0,50 50,20 100,80 150,20 200,80 250,20 300,50\"" ++
   " fill=\"none\" stroke=\"#ea580c\" stroke-width=\"2\"/></svg>"
 
--- 2. Write a main function that outputs SVGs to .lake/svg/
+-- 2. Write a main function that outputs SVGs to _svg_<filename>/
+-- SVGs are saved in the same directory as the .lean file
 def main : IO Unit := do
-  IO.FS.createDirAll ".lake/svg"
-  IO.FS.writeFile ".lake/svg/circle.svg" circle
-  IO.FS.writeFile ".lake/svg/wave.svg" wave
+  IO.FS.createDirAll "_svg_MyDocument"
+  IO.FS.writeFile "_svg_MyDocument/circle.svg" circle
+  IO.FS.writeFile "_svg_MyDocument/wave.svg" wave
 
 -- 3. Use @svg markers in doc comments to display them
 /-!
@@ -148,7 +149,7 @@ The extension also runs this automatically when you open the preview.
 
 ### `@svg` Marker
 
-Write `@svg <filename>` inside a doc comment (`/-! … -/` or `/-- … -/`). The filename refers to a file in `.lake/svg/`.
+Write `@svg <filename>` inside a doc comment (`/-! … -/` or `/-- … -/`). The filename refers to a file in `_svg_<LeanFileName>/` directory, which should be located in the same directory as your `.lean` file.
 
 You can also use Markdown tables for grid layouts:
 

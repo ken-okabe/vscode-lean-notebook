@@ -324,15 +324,17 @@ export class NotebookPanel {
     }
 
     /**
-     * Watch .lake/svg/ for changes and refresh SVG blocks.
+     * Watch _svg_<filename>/ directory for changes and refresh SVG blocks.
+     * The directory is in the same location as the .lean file.
      */
     private _setupSvgWatcher() {
         if (!this._document) return;
         const docPath = this._document.uri.fsPath;
-        const lakeRoot = this._findLakeRoot(docPath);
-        if (!lakeRoot) return;
+        const docDir = path.dirname(docPath);
+        const docBaseName = path.basename(docPath, '.lean');
+        const svgDirName = `_svg_${docBaseName}`;
 
-        const svgPattern = new vscode.RelativePattern(lakeRoot, '.lake/svg/**');
+        const svgPattern = new vscode.RelativePattern(docDir, `${svgDirName}/**`);
         this._svgWatcher = vscode.workspace.createFileSystemWatcher(svgPattern);
 
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;

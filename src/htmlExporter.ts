@@ -183,31 +183,20 @@ function buildSingleFileHtml(extensionUri: vscode.Uri, leanFilePath: string): st
   const svgDataMap: Record<string, string> = {};
   const svgMarkerRe = /@svg\s+([\w.\-]+)/g;
   let svgMatch: RegExpExecArray | null;
+  const leanDir = path.dirname(leanFilePath);
+  const leanBaseName = path.basename(leanFilePath, '.lean');
+  const svgDirPath = path.join(leanDir, `_svg_${leanBaseName}`);
+  
   while ((svgMatch = svgMarkerRe.exec(rawLeanContent)) !== null) {
     const svgFileName = svgMatch[1].trim();
     if (!svgDataMap[svgFileName]) {
-      // Find lake root
-      let lakeRoot: string | null = null;
-      let dir = path.dirname(leanFilePath);
-      while (true) {
-        if (fs.existsSync(path.join(dir, 'lakefile.lean')) ||
-          fs.existsSync(path.join(dir, 'lakefile.toml'))) {
-          lakeRoot = dir;
-          break;
+      const svgPath = path.join(svgDirPath, svgFileName);
+      try {
+        if (fs.existsSync(svgPath)) {
+          svgDataMap[svgFileName] = fs.readFileSync(svgPath, 'utf8');
         }
-        const parent = path.dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-      }
-      if (lakeRoot) {
-        const svgPath = path.join(lakeRoot, '.lake', 'svg', svgFileName);
-        try {
-          if (fs.existsSync(svgPath)) {
-            svgDataMap[svgFileName] = fs.readFileSync(svgPath, 'utf8');
-          }
-        } catch (e) {
-          console.warn(`[htmlExporter] Could not read SVG: ${svgPath}`, e);
-        }
+      } catch (e) {
+        console.warn(`[htmlExporter] Could not read SVG: ${svgPath}`, e);
       }
     }
   }
@@ -948,10 +937,14 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
     // Collect SVG markers from this file
     let svgM: RegExpExecArray | null;
     svgMarkerRe2.lastIndex = 0;
+    const lfDir = path.dirname(lf);
+    const lfBaseName = path.basename(lf, '.lean');
+    const lfSvgDirPath = path.join(lfDir, `_svg_${lfBaseName}`);
+    
     while ((svgM = svgMarkerRe2.exec(rawContent)) !== null) {
       const svgFileName = svgM[1].trim();
       if (!allSvgDataMap[svgFileName]) {
-        const svgPath = path.join(sourceDir, '.lake', 'svg', svgFileName);
+        const svgPath = path.join(lfSvgDirPath, svgFileName);
         try {
           if (fs.existsSync(svgPath)) {
             allSvgDataMap[svgFileName] = fs.readFileSync(svgPath, 'utf8');
