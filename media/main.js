@@ -76,12 +76,12 @@ try {
                         }
                     }
 
-                    // SVG file blocks: re-render when content becomes available or changes
-                    if (block.type === 'svg-file') {
+                    // Image file blocks: re-render when content becomes available or changes
+                    if (block.type === 'image-file') {
                         const oldContent = cached.block.content;
                         const newContent = block.content;
                         if (oldContent !== newContent) {
-                            console.log(`[App] SVG content changed for block ${block.id}`);
+                            console.log(`[App] Image content changed for block ${block.id}`);
                             if (cached.controller) cached.controller.abort();
                             const controller = new AbortController();
                             const dom = renderBlock(block, controller.signal);
@@ -138,7 +138,7 @@ try {
             case 'doc-comment': return MarkdownComponent(block.content, signal, "block-doc-comment");
             case 'mermaid': return MermaidComponent(block.content || block.source, signal);
             case 'graphviz': return GraphvizComponent(block.content || block.source, signal);
-            case 'svg-file': return SvgFileComponent(block, signal);
+            case 'image-file': return ImageFileComponent(block, signal);
             default: return div(`Unknown block type: ${block.type}`);
         }
     }
@@ -288,17 +288,22 @@ try {
         return dom;
     };
 
-    const SvgFileComponent = (block, signal) => {
+    const ImageFileComponent = (block, signal) => {
         if (block.content) {
-            const dom = div({ class: "lean-svg-output" });
-            dom.innerHTML = block.content;
+            // block.content is a data URI (works for SVG, PNG, JPEG, etc.)
+            const dom = div({ class: "lean-image-output" });
+            const img = document.createElement('img');
+            img.src = block.content;
+            img.alt = block.path || '';
+            img.style.maxWidth = '100%';
+            dom.appendChild(img);
             return dom;
         } else {
-            const dom = div({ class: "lean-svg-output" });
+            const dom = div({ class: "lean-image-output" });
             dom.style.color = '#94a3b8';
             dom.style.fontStyle = 'italic';
             dom.style.fontSize = '0.85em';
-            dom.textContent = `SVG not found: ${block.path || 'unknown'} — run lake build to generate`;
+            dom.textContent = `Image not found: ${block.path || 'unknown'}`;
             return dom;
         }
     };

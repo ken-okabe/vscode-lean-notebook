@@ -763,9 +763,9 @@ h6 {
 }
 
 /* ================================================================
-   SVG Output from #eval
+   Image Output (@image marker) and SVG from #eval
    ================================================================ */
-.lean-svg-output {
+.lean-image-output {
   text-align: center;
   margin: 0;
   padding: 12px;
@@ -773,7 +773,14 @@ h6 {
   background: var(--surface);
 }
 
-.lean-svg-output svg {
+.lean-image-output img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.lean-image-output svg {
   max-width: 100%;
   height: auto;
 }

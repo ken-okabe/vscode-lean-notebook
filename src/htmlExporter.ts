@@ -179,28 +179,38 @@ function buildSingleFileHtml(extensionUri: vscode.Uri, leanFilePath: string): st
     '<script type="text/x-lean-source" data-path="' +
     fileName.replace(/"/g, '&quot;') + '">' + leanContent + '<' + '/script>';
 
-  // Collect SVG files referenced by @svg markers
-  const svgDataMap: Record<string, string> = {};
-  const svgMarkerRe = /@svg\s+([\w.\-]+)/g;
-  let svgMatch: RegExpExecArray | null;
+  // Collect image files referenced by @image markers (relative to the .lean file)
+  const imageDataMap: Record<string, string> = {};
+  const imageMarkerRe = /@image\s+(\S+)/g;
+  let imageMatch: RegExpExecArray | null;
   const leanDir = path.dirname(leanFilePath);
-  const leanBaseName = path.basename(leanFilePath, '.lean');
-  const svgDirPath = path.join(leanDir, `_svg_${leanBaseName}`);
-  
-  while ((svgMatch = svgMarkerRe.exec(rawLeanContent)) !== null) {
-    const svgFileName = svgMatch[1].trim();
-    if (!svgDataMap[svgFileName]) {
-      const svgPath = path.join(svgDirPath, svgFileName);
+
+  const mimeOf = (p: string): string => {
+    const ext = path.extname(p).toLowerCase();
+    if (ext === '.svg') return 'image/svg+xml';
+    if (ext === '.png') return 'image/png';
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+    if (ext === '.gif') return 'image/gif';
+    if (ext === '.webp') return 'image/webp';
+    return 'application/octet-stream';
+  };
+
+  while ((imageMatch = imageMarkerRe.exec(rawLeanContent)) !== null) {
+    const imgRelPath = imageMatch[1].trim();
+    if (!imageDataMap[imgRelPath]) {
+      const imgPath = path.resolve(leanDir, imgRelPath);
       try {
-        if (fs.existsSync(svgPath)) {
-          svgDataMap[svgFileName] = fs.readFileSync(svgPath, 'utf8');
+        if (fs.existsSync(imgPath)) {
+          const data = fs.readFileSync(imgPath);
+          const mime = mimeOf(imgPath);
+          imageDataMap[imgRelPath] = `data:${mime};base64,${data.toString('base64')}`;
         }
       } catch (e) {
-        console.warn(`[htmlExporter] Could not read SVG: ${svgPath}`, e);
+        console.warn(`[htmlExporter] Could not read image: ${imgPath}`, e);
       }
     }
   }
-  const svgDataJson = esc(JSON.stringify(svgDataMap));
+  const svgDataJson = esc(JSON.stringify(imageDataMap));
 
   // Viewer JS — reads from the single embedded <script type="text/x-lean-source"> tag.
   // No sidebar (only one file), auto-loads immediately.
@@ -258,7 +268,7 @@ function renderBlocksSeq(blocks, nb, i, done) {
     el.className = cls;
     var _sdEl = document.getElementById('svg-data');
     var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    el.innerHTML = mdToHtml(inlineSvgMarkers(b.content, _sd));
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd));
     var codes = el.querySelectorAll('pre code');
     for (var c = 0; c < codes.length; c++) {
       if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
@@ -283,16 +293,21 @@ function renderBlocksSeq(blocks, nb, i, done) {
     wrap2.className = 'block-graphviz';
     nb.appendChild(wrap2);
     renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'svg-file') {
-    var svgEl = document.createElement('div');
-    svgEl.className = 'lean-svg-output';
-    var svgDataEl2 = document.getElementById('svg-data');
+  } else if (b.type === 'image-file') {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'lean-image-output';
+    var imgDataEl = document.getElementById('svg-data');
     try {
-      var sd = svgDataEl2 ? JSON.parse(svgDataEl2.textContent || '{}') : {};
-      if (sd[b.path]) { svgEl.innerHTML = sd[b.path]; }
-      else { svgEl.style.color = '#94a3b8'; svgEl.textContent = 'SVG: ' + (b.path || 'unknown'); }
-    } catch(e) { svgEl.textContent = 'SVG: ' + (b.path || 'unknown'); }
-    nb.appendChild(svgEl);
+      var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
+      if (sd[b.path]) {
+        var imgEl = document.createElement('img');
+        imgEl.src = sd[b.path];
+        imgEl.alt = b.path || '';
+        imgEl.style.maxWidth = '100%';
+        imgWrap.appendChild(imgEl);
+      } else { imgWrap.style.color = '#94a3b8'; imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
+    } catch(e) { imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
+    nb.appendChild(imgWrap);
     renderBlocksSeq(blocks, nb, i + 1, done);
   } else {
     renderBlocksSeq(blocks, nb, i + 1, done);
@@ -803,7 +818,7 @@ function renderBlocksSeq(blocks, nb, i, done) {
     el.className = cls;
     var _sdEl = document.getElementById('svg-data');
     var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    el.innerHTML = mdToHtml(inlineSvgMarkers(b.content, _sd));
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd));
     var codes = el.querySelectorAll('pre code');
     for (var c = 0; c < codes.length; c++) {
       if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
@@ -828,16 +843,21 @@ function renderBlocksSeq(blocks, nb, i, done) {
     wrap2.className = 'block-graphviz';
     nb.appendChild(wrap2);
     renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'svg-file') {
-    var svgEl = document.createElement('div');
-    svgEl.className = 'lean-svg-output';
-    var svgDataEl2 = document.getElementById('svg-data');
+  } else if (b.type === 'image-file') {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'lean-image-output';
+    var imgDataEl = document.getElementById('svg-data');
     try {
-      var sd = svgDataEl2 ? JSON.parse(svgDataEl2.textContent || '{}') : {};
-      if (sd[b.path]) { svgEl.innerHTML = sd[b.path]; }
-      else { svgEl.style.color = '#94a3b8'; svgEl.textContent = 'SVG: ' + (b.path || 'unknown'); }
-    } catch(e) { svgEl.textContent = 'SVG: ' + (b.path || 'unknown'); }
-    nb.appendChild(svgEl);
+      var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
+      if (sd[b.path]) {
+        var imgEl = document.createElement('img');
+        imgEl.src = sd[b.path];
+        imgEl.alt = b.path || '';
+        imgEl.style.maxWidth = '100%';
+        imgWrap.appendChild(imgEl);
+      } else { imgWrap.style.color = '#94a3b8'; imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
+    } catch(e) { imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
+    nb.appendChild(imgWrap);
     renderBlocksSeq(blocks, nb, i + 1, done);
   } else {
     renderBlocksSeq(blocks, nb, i + 1, done);
@@ -922,8 +942,19 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
   const leanFiles = findContentLeanFiles(sourceDir);
   leanFiles.sort((a, b) => a.localeCompare(b));
   const leanScriptTags: string[] = [];
-  const allSvgDataMap: Record<string, string> = {};
-  const svgMarkerRe2 = /@svg\s+([\w.\-]+)/g;
+  const allImageDataMap: Record<string, string> = {};
+  const imageMarkerRe2 = /@image\s+(\S+)/g;
+
+  const mimeOf2 = (p: string): string => {
+    const ext = path.extname(p).toLowerCase();
+    if (ext === '.svg') return 'image/svg+xml';
+    if (ext === '.png') return 'image/png';
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+    if (ext === '.gif') return 'image/gif';
+    if (ext === '.webp') return 'image/webp';
+    return 'application/octet-stream';
+  };
+
   for (const lf of leanFiles) {
     const fullRel = path.relative(sourceDir, lf);
     // Strip the first component (project name directory) from the path
@@ -934,26 +965,26 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
       '<script type="text/x-lean-source" data-path="' +
       rel.replace(/"/g, '&quot;') + '">' + content + '<' + '/script>'
     );
-    // Collect SVG markers from this file
-    let svgM: RegExpExecArray | null;
-    svgMarkerRe2.lastIndex = 0;
+    // Collect @image markers from this file
+    let imgM: RegExpExecArray | null;
+    imageMarkerRe2.lastIndex = 0;
     const lfDir = path.dirname(lf);
-    const lfBaseName = path.basename(lf, '.lean');
-    const lfSvgDirPath = path.join(lfDir, `_svg_${lfBaseName}`);
-    
-    while ((svgM = svgMarkerRe2.exec(rawContent)) !== null) {
-      const svgFileName = svgM[1].trim();
-      if (!allSvgDataMap[svgFileName]) {
-        const svgPath = path.join(lfSvgDirPath, svgFileName);
+
+    while ((imgM = imageMarkerRe2.exec(rawContent)) !== null) {
+      const imgRelPath = imgM[1].trim();
+      if (!allImageDataMap[imgRelPath]) {
+        const imgPath = path.resolve(lfDir, imgRelPath);
         try {
-          if (fs.existsSync(svgPath)) {
-            allSvgDataMap[svgFileName] = fs.readFileSync(svgPath, 'utf8');
+          if (fs.existsSync(imgPath)) {
+            const data = fs.readFileSync(imgPath);
+            const mime = mimeOf2(imgPath);
+            allImageDataMap[imgRelPath] = `data:${mime};base64,${data.toString('base64')}`;
           }
         } catch (e) { /* skip */ }
       }
     }
   }
-  const allSvgDataJson = esc(JSON.stringify(allSvgDataMap));
+  const allSvgDataJson = esc(JSON.stringify(allImageDataMap));
 
   // Viewer CSS (same as viewer-template.html)
   const viewerCss = `
@@ -1071,7 +1102,7 @@ function renderBlocksSeq(blocks, nb, i, done) {
     el.className = cls;
     var _sdEl = document.getElementById('svg-data');
     var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    el.innerHTML = mdToHtml(inlineSvgMarkers(b.content, _sd));
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd));
     var codes = el.querySelectorAll('pre code');
     for (var c = 0; c < codes.length; c++) {
       if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
@@ -1096,16 +1127,21 @@ function renderBlocksSeq(blocks, nb, i, done) {
     wrap2.className = 'block-graphviz';
     nb.appendChild(wrap2);
     renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'svg-file') {
-    var svgEl = document.createElement('div');
-    svgEl.className = 'lean-svg-output';
-    var svgDataEl2 = document.getElementById('svg-data');
+  } else if (b.type === 'image-file') {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'lean-image-output';
+    var imgDataEl = document.getElementById('svg-data');
     try {
-      var sd = svgDataEl2 ? JSON.parse(svgDataEl2.textContent || '{}') : {};
-      if (sd[b.path]) { svgEl.innerHTML = sd[b.path]; }
-      else { svgEl.style.color = '#94a3b8'; svgEl.textContent = 'SVG: ' + (b.path || 'unknown'); }
-    } catch(e) { svgEl.textContent = 'SVG: ' + (b.path || 'unknown'); }
-    nb.appendChild(svgEl);
+      var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
+      if (sd[b.path]) {
+        var imgEl = document.createElement('img');
+        imgEl.src = sd[b.path];
+        imgEl.alt = b.path || '';
+        imgEl.style.maxWidth = '100%';
+        imgWrap.appendChild(imgEl);
+      } else { imgWrap.style.color = '#94a3b8'; imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
+    } catch(e) { imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
+    nb.appendChild(imgWrap);
     renderBlocksSeq(blocks, nb, i + 1, done);
   } else {
     renderBlocksSeq(blocks, nb, i + 1, done);

@@ -451,7 +451,7 @@ function splitLeanDocComments(text) {
         if (b.type === 'code') return b.source.trim().length > 0;
         if (b.type === 'mermaid') return b.source.trim().length > 0;
         if (b.type === 'graphviz') return b.source.trim().length > 0;
-        if (b.type === 'svg-file') return b.path.trim().length > 0;
+        if (b.type === 'image-file') return b.path.trim().length > 0;
         return b.content.trim().length > 0;
     });
 }
@@ -461,7 +461,7 @@ function splitDiagramBlocks(content) {
     // Note: backticks written as \x60 to avoid breaking HTML script-tag embedding
     const TICK3 = '\x60\x60\x60';
     const diagramRe = new RegExp('^' + TICK3 + '(mermaid|graphviz|dot)\\s*\\n([\\s\\S]*?)^' + TICK3 + '\\s*$', 'gm');
-    const svgRe = /^@svg\s+(.+)$/gm;
+    const imageRe = /^@image\s+(.+)$/gm;
 
     // Collect all matches with positions
     var matches = [];
@@ -471,8 +471,8 @@ function splitDiagramBlocks(content) {
         var blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
         matches.push({ index: match.index, end: diagramRe.lastIndex, type: blockType, data: match[2] });
     }
-    while ((match = svgRe.exec(content)) !== null) {
-        matches.push({ index: match.index, end: svgRe.lastIndex, type: 'svg-file', data: match[1].trim() });
+    while ((match = imageRe.exec(content)) !== null) {
+        matches.push({ index: match.index, end: imageRe.lastIndex, type: 'image-file', data: match[1].trim() });
     }
     matches.sort(function (a, b) { return a.index - b.index; });
 
@@ -482,8 +482,8 @@ function splitDiagramBlocks(content) {
         var textContent = content.substring(lastIndex, m.index);
         if (textContent.trim().length > 0) result.push({ type: 'text', content: textContent.trim() });
 
-        if (m.type === 'svg-file') {
-            result.push({ type: 'svg-file', path: m.data });
+        if (m.type === 'image-file') {
+            result.push({ type: 'image-file', path: m.data });
         } else {
             if (m.data.trim().length > 0) {
                 result.push({ type: m.type, source: trimEmptyLines(m.data) });
@@ -506,26 +506,26 @@ function expandCommentBlock(block) {
     if (subBlocks.length === 1 && subBlocks[0].type === 'text') return [block];
     return subBlocks.map(sub => {
         if (sub.type === 'text') return { type: block.type, content: sub.content, range: block.range };
-        if (sub.type === 'svg-file') return { type: 'svg-file', path: sub.path, range: block.range };
+        if (sub.type === 'image-file') return { type: 'image-file', path: sub.path, range: block.range };
         return { type: sub.type, source: sub.source, range: block.range };
     });
 }
 
 /**
- * Replace inline @svg markers in markdown content with base64 <img> tags.
- * Used for @svg inside table cells which splitDiagramBlocks can't extract.
+ * Replace inline @image markers in markdown content with <img> tags.
+ * Used for @image inside table cells which splitDiagramBlocks can't extract.
  * @param {string} content - markdown content
- * @param {Object} svgData - map of filename -> SVG string
- * @returns {string} content with @svg replaced
+ * @param {Object} imageData - map of relative path -> data URI string
+ * @returns {string} content with @image replaced
  */
-function inlineSvgMarkers(content, svgData) {
-    if (!svgData || !content) return content;
-    return content.replace(/@svg\s+([\w.\-]+)/g, function (_m, filename) {
-        var svg = svgData[filename.trim()];
-        if (svg) {
-            return '<img src="data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg))) + '" alt="' + filename.trim() + '" style="max-width:100%">';
+function inlineImageMarkers(content, imageData) {
+    if (!imageData || !content) return content;
+    return content.replace(/@image\s+([\S]+)/g, function (_m, filePath) {
+        var dataUri = imageData[filePath.trim()];
+        if (dataUri) {
+            return '<img src="' + dataUri + '" alt="' + filePath.trim() + '" style="max-width:100%">';
         }
-        return '*SVG not found: ' + filename.trim() + '*';
+        return '*Image not found: ' + filePath.trim() + '*';
     });
 }
 

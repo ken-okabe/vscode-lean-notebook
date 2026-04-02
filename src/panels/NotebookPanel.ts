@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
 
 import { parseLeanFileWithLSP } from '../lspParser';
 import { parseMarkdownFile } from '../markdownParser';
@@ -23,9 +22,8 @@ export class NotebookPanel {
     private _webviewIsReady = false;
     private _currentBlocks: any[] | null = null;
 
-    // SVG state
-    private _svgWatcher: vscode.FileSystemWatcher | undefined;
-    private _svgGenDone = false;
+    // Image file watcher
+    private _imageWatcher: vscode.FileSystemWatcher | undefined;
 
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, document: vscode.TextDocument) {
         this._panel = panel;
@@ -139,9 +137,9 @@ export class NotebookPanel {
     public dispose() {
         NotebookPanel.currentPanel = undefined;
         this._panel.dispose();
-        if (this._svgWatcher) {
-            this._svgWatcher.dispose();
-            this._svgWatcher = undefined;
+        if (this._imageWatcher) {
+            this._imageWatcher.dispose();
+            this._imageWatcher = undefined;
         }
         while (this._disposables.length) {
             const x = this._disposables.pop();
@@ -209,6 +207,8 @@ export class NotebookPanel {
             const { attachDiagnostics } = await import('../lspParser');
             // Re-attach diagnostics to existing blocks (mutates in place)
             await attachDiagnostics(this._document, this._currentBlocks);
+            // Re-attach image data in case files changed
+            this._attachImageData(this._currentBlocks);
             this._trySend();
         }, 500);
     }
@@ -256,115 +256,79 @@ export class NotebookPanel {
         this._panel.title = fileName;
 
         if (!isMarkdown) {
-            // Set up SVG file watcher if not done yet
-            if (!this._svgWatcher) {
-                this._setupSvgWatcher();
+            // Attach image data (data URIs) to image-file blocks
+            if (this._currentBlocks) {
+                this._attachImageData(this._currentBlocks);
             }
-            // Run lake exe svg_gen once if @svg blocks are present
-            if (!this._svgGenDone && this._currentBlocks?.some(b => b.type === 'svg-file')) {
-                this._runSvgGen();
+            // Set up image file watcher if not done yet
+            if (!this._imageWatcher) {
+                this._setupImageWatcher();
             }
         }
     }
 
     /**
-     * Run `lake exe svg_gen` once to generate SVG files.
-     * Only runs if the lakefile defines an svg_gen target.
+     * For each image-file block, read the referenced file from disk and
+     * attach it as a data URI in block.content.
+     * Supports SVG, PNG, JPEG, GIF, WebP.
      */
-    private _runSvgGen() {
-        if (this._svgGenDone) return;
+    private _attachImageData(blocks: any[]) {
         if (!this._document) return;
+        const docDir = path.dirname(this._document.uri.fsPath);
 
-        const docPath = this._document.uri.fsPath;
-        const lakeRoot = this._findLakeRoot(docPath);
-        if (!lakeRoot) return;
+        const mimeOf = (p: string): string => {
+            const ext = path.extname(p).toLowerCase();
+            if (ext === '.svg') return 'image/svg+xml';
+            if (ext === '.png') return 'image/png';
+            if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+            if (ext === '.gif') return 'image/gif';
+            if (ext === '.webp') return 'image/webp';
+            return 'application/octet-stream';
+        };
 
-        // Check if svg_gen executable target exists in lakefile
-        const lakefilePath = path.join(lakeRoot, 'lakefile.lean');
-        const lakefileToml = path.join(lakeRoot, 'lakefile.toml');
-        let hasSvgGen = false;
-        try {
-            if (fs.existsSync(lakefilePath)) {
-                const content = fs.readFileSync(lakefilePath, 'utf8');
-                hasSvgGen = /svg_gen/.test(content);
-            } else if (fs.existsSync(lakefileToml)) {
-                const content = fs.readFileSync(lakefileToml, 'utf8');
-                hasSvgGen = /svg_gen/.test(content);
+        for (const block of blocks) {
+            if (block.type !== 'image-file') continue;
+            const imgPath = path.resolve(docDir, block.path);
+            try {
+                if (fs.existsSync(imgPath)) {
+                    const data = fs.readFileSync(imgPath);
+                    const mime = mimeOf(imgPath);
+                    block.content = `data:${mime};base64,${data.toString('base64')}`;
+                } else {
+                    block.content = null;
+                }
+            } catch (e) {
+                console.warn(`[NotebookPanel] Could not read image: ${imgPath}`, e);
+                block.content = null;
             }
-        } catch { /* ignore */ }
-
-        if (!hasSvgGen) {
-            this._svgGenDone = true;
-            return;
         }
-
-        this._svgGenDone = true;
-        console.log('[NotebookPanel] Running lake exe svg_gen');
-
-        const proc = spawn('lake', ['exe', 'svg_gen'], {
-            cwd: lakeRoot,
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-
-        let stderr = '';
-        proc.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-        proc.on('close', (code) => {
-            if (code === 0) {
-                console.log('[NotebookPanel] lake exe svg_gen succeeded');
-            } else {
-                console.warn(`[NotebookPanel] lake exe svg_gen exited with code ${code}`, stderr.slice(0, 500));
-            }
-            // File watcher will pick up new SVG files and trigger _update
-        });
-
-        proc.on('error', (err) => {
-            console.error('[NotebookPanel] lake exe svg_gen failed to start:', err.message);
-        });
     }
 
     /**
-     * Watch _svg_<filename>/ directory for changes and refresh SVG blocks.
-     * The directory is in the same location as the .lean file.
+     * Watch the directory of the current .lean file for image file changes
+     * and refresh when any image is created/changed.
      */
-    private _setupSvgWatcher() {
+    private _setupImageWatcher() {
         if (!this._document) return;
-        const docPath = this._document.uri.fsPath;
-        const docDir = path.dirname(docPath);
-        const docBaseName = path.basename(docPath, '.lean');
-        const svgDirName = `_svg_${docBaseName}`;
+        const docDir = path.dirname(this._document.uri.fsPath);
 
-        const svgPattern = new vscode.RelativePattern(docDir, `${svgDirName}/**`);
-        this._svgWatcher = vscode.workspace.createFileSystemWatcher(svgPattern);
+        const imagePattern = new vscode.RelativePattern(docDir, '**/*.{svg,png,jpg,jpeg,gif,webp}');
+        this._imageWatcher = vscode.workspace.createFileSystemWatcher(imagePattern);
 
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         const refresh = () => {
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
-                console.log('[NotebookPanel] SVG file changed, refreshing');
+                console.log('[NotebookPanel] Image file changed, refreshing');
                 if (this._document) {
                     this._update();
                 }
             }, 500);
         };
 
-        this._svgWatcher.onDidCreate(refresh);
-        this._svgWatcher.onDidChange(refresh);
-        this._disposables.push(this._svgWatcher);
-    }
-
-    private _findLakeRoot(docPath: string): string | null {
-        let dir = path.dirname(docPath);
-        while (true) {
-            if (fs.existsSync(path.join(dir, 'lakefile.lean')) ||
-                fs.existsSync(path.join(dir, 'lakefile.toml'))) {
-                return dir;
-            }
-            const parent = path.dirname(dir);
-            if (parent === dir) break;
-            dir = parent;
-        }
-        return null;
+        this._imageWatcher.onDidCreate(refresh);
+        this._imageWatcher.onDidChange(refresh);
+        this._disposables.push(this._imageWatcher);
     }
 
     private _getWebviewContent(webview: vscode.Webview) {
