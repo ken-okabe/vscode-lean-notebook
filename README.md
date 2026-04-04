@@ -61,7 +61,6 @@ Four outputs are generated under one parent directory:
 ```
 CL8E8TQC/
   CL8E8TQC_Separate_HTML/
-    _libs/
     CL8E8TQC/
       _00_Introduction/
         _00_LiterateCoding_lean.html

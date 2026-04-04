@@ -7,7 +7,7 @@
   <title>Lean Notebook Viewer</title>
   <script>
     // MathJax config — from MATHJAX_CONFIG in renderer.js (single source of truth).
-    MathJax = %% MATHJAX_CONFIG %%;
+    MathJax = %%MATHJAX_CONFIG%%;
   </script>
   <script async src="./_libs/tex-svg.js"></script>
   <script src="./_libs/marked.min.js"></script>
@@ -45,7 +45,7 @@
   </div>
 
   <script>
-%% RENDERER_JS %%
+%%RENDERER_JS%%
   </script>
   <script>
       /* ================================================================
@@ -69,7 +69,7 @@
             const cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
             const el = document.createElement('div');
             el.className = cls;
-            el.innerHTML = mdToHtml(inlineSvgMarkers(b.content, svgData));
+            el.innerHTML = mdToHtml(inlineImageMarkers(b.content, svgData));
             // Apply Lean syntax highlighting to ```lean code fences inside markdown
             el.querySelectorAll('pre code').forEach(code => {
               const isLean = code.classList.contains('language-lean') ||
@@ -94,7 +94,7 @@
             wrap.className = 'block-graphviz';
             nb.appendChild(wrap);
             await renderGraphviz(b.source, wrap);
-          } else if (b.type === 'svg-file') {
+          } else if (b.type === 'image-file') {
             const el = document.createElement('div');
             el.className = 'lean-svg-output';
             var svgContent = svgData[b.path];

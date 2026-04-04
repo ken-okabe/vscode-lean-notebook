@@ -518,14 +518,33 @@ function expandCommentBlock(block) {
  * @param {Object} imageData - map of relative path -> data URI string
  * @returns {string} content with @image replaced
  */
-function inlineImageMarkers(content, imageData) {
+function inlineImageMarkers(content, imageData, textFilePath) {
     if (!imageData || !content) return content;
     return content.replace(/@image\s+([\S]+)/g, function (_m, filePath) {
-        var dataUri = imageData[filePath.trim()];
-        if (dataUri) {
-            return '<img src="' + dataUri + '" alt="' + filePath.trim() + '" style="max-width:100%">';
+        var rel = filePath.trim();
+        var absPath = rel;
+        if (textFilePath && (rel.startsWith('./') || rel.startsWith('../'))) {
+           var parts = textFilePath.split('/');
+           parts.pop();
+           var relParts = rel.split('/');
+           for (var i=0; i<relParts.length; i++) {
+             if (relParts[i] === '.') continue;
+             if (relParts[i] === '..') parts.pop();
+             else parts.push(relParts[i]);
+           }
+           absPath = parts.join('/');
+        } else if (textFilePath && !rel.startsWith('/')) {
+           var parts2 = textFilePath.split('/');
+           parts2.pop();
+           parts2.push(rel);
+           absPath = parts2.join('/');
         }
-        return '*Image not found: ' + filePath.trim() + '*';
+
+        var dataUri = imageData[absPath] || imageData[rel] || imageData['./' + rel];
+        if (dataUri) {
+            return '<img src="' + dataUri + '" alt="' + rel + '" style="max-width:100%">';
+        }
+        return '*Image not found: ' + rel + '*';
     });
 }
 

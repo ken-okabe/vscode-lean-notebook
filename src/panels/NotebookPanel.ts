@@ -240,6 +240,12 @@ export class NotebookPanel {
             if (currentGen !== this._updateGeneration) return;
 
             this._currentBlocks = blocks;
+
+            // Attach image data (data URIs) BEFORE sending to WebView
+            if (!isMarkdown) {
+                this._attachImageData(this._currentBlocks);
+            }
+
             this._trySend();
         } catch (e) {
             if (currentGen !== this._updateGeneration) return;
@@ -256,10 +262,6 @@ export class NotebookPanel {
         this._panel.title = fileName;
 
         if (!isMarkdown) {
-            // Attach image data (data URIs) to image-file blocks
-            if (this._currentBlocks) {
-                this._attachImageData(this._currentBlocks);
-            }
             // Set up image file watcher if not done yet
             if (!this._imageWatcher) {
                 this._setupImageWatcher();
@@ -268,8 +270,9 @@ export class NotebookPanel {
     }
 
     /**
-     * For each image-file block, read the referenced file from disk and
-     * attach it as a data URI in block.content.
+     * Process all blocks and resolve @image references:
+     * - 'image-file' blocks: read file and set block.content to data URI
+     * - text/doc blocks: replace @image markers in content with data URIs inline
      * Supports SVG, PNG, JPEG, GIF, WebP.
      */
     private _attachImageData(blocks: any[]) {
@@ -286,20 +289,37 @@ export class NotebookPanel {
             return 'application/octet-stream';
         };
 
-        for (const block of blocks) {
-            if (block.type !== 'image-file') continue;
-            const imgPath = path.resolve(docDir, block.path);
+        const readImageAsDataUri = (imgRelPath: string): string | null => {
+            const imgPath = path.resolve(docDir, imgRelPath);
             try {
                 if (fs.existsSync(imgPath)) {
                     const data = fs.readFileSync(imgPath);
                     const mime = mimeOf(imgPath);
-                    block.content = `data:${mime};base64,${data.toString('base64')}`;
-                } else {
-                    block.content = null;
+                    return `data:${mime};base64,${data.toString('base64')}`;
                 }
             } catch (e) {
                 console.warn(`[NotebookPanel] Could not read image: ${imgPath}`, e);
-                block.content = null;
+            }
+            return null;
+        };
+
+        for (const block of blocks) {
+            if (block.type === 'image-file') {
+                // Standalone @image block: set content to data URI
+                block.content = readImageAsDataUri(block.path);
+
+            } else if (block.type === 'module-doc' || block.type === 'doc-comment' ||
+                       block.type === 'text' || block.type === 'markdown') {
+                // Text block: replace all @image markers in content with <img> tags
+                if (typeof block.content === 'string' && block.content.includes('@image')) {
+                    block.content = block.content.replace(/@image\s+(\S+)/g, (_m: string, relPath: string) => {
+                        const dataUri = readImageAsDataUri(relPath.trim());
+                        if (dataUri) {
+                            return `<img src="${dataUri}" alt="${relPath.trim()}" style="max-width:100%">`;
+                        }
+                        return `*Image not found: ${relPath.trim()}*`;
+                    });
+                }
             }
         }
     }

@@ -268,7 +268,8 @@ function renderBlocksSeq(blocks, nb, i, done) {
     el.className = cls;
     var _sdEl = document.getElementById('svg-data');
     var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd));
+    var _fpath = (typeof f !== 'undefined') ? f.path : null;
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd, _fpath));
     var codes = el.querySelectorAll('pre code');
     for (var c = 0; c < codes.length; c++) {
       if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
@@ -299,9 +300,23 @@ function renderBlocksSeq(blocks, nb, i, done) {
     var imgDataEl = document.getElementById('svg-data');
     try {
       var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
-      if (sd[b.path]) {
+      var absPath = b.path;
+      if (typeof f !== 'undefined' && f.path) {
+        var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
+        var parts = f.path.split('/');
+        parts.pop();
+        var relParts = rel.split('/');
+        for (var k=0; k<relParts.length; k++) {
+          if (relParts[k] === '.') continue;
+          if (relParts[k] === '..') parts.pop();
+          else parts.push(relParts[k]);
+        }
+        absPath = parts.join('/');
+      }
+      var uri = sd[absPath] || sd[b.path];
+      if (uri) {
         var imgEl = document.createElement('img');
-        imgEl.src = sd[b.path];
+        imgEl.src = uri;
         imgEl.alt = b.path || '';
         imgEl.style.maxWidth = '100%';
         imgWrap.appendChild(imgEl);
@@ -373,23 +388,14 @@ async function exportSingleFile(
   extensionUri: vscode.Uri,
   leanFilePath: string,
   outputDir: string,
-  sourceRoot?: string,
-  libsRoot?: string
+  sourceRoot?: string
 ): Promise<string> {
+  const html = buildSingleFileHtml(extensionUri, leanFilePath);
+
   if (sourceRoot) {
     // Batch mode: preserve directory structure relative to sourceRoot
-    const leanSource = fs.readFileSync(leanFilePath, 'utf8');
     const relDir = path.relative(sourceRoot, path.dirname(leanFilePath));
     const targetDir = path.join(outputDir, relDir);
-
-    // Compute relative path from targetDir to _libs/ (which is in libsRoot)
-    let libsRelPath = './_libs';
-    if (libsRoot) {
-      const relToLibs = path.relative(targetDir, path.join(libsRoot, '_libs'));
-      libsRelPath = relToLibs.split(path.sep).join('/');
-    }
-
-    const html = buildHtml(extensionUri, leanSource, libsRelPath);
     fs.mkdirSync(targetDir, { recursive: true });
 
     const htmlFileName = toHtmlFileName(leanFilePath);
@@ -398,7 +404,6 @@ async function exportSingleFile(
     return outputPath;
   } else {
     // Single-file mode: self-contained HTML with all libraries inlined
-    const html = buildSingleFileHtml(extensionUri, leanFilePath);
     fs.mkdirSync(outputDir, { recursive: true });
 
     const htmlFileName = toHtmlFileName(leanFilePath);
@@ -510,8 +515,8 @@ export async function runHtmlExport(
     if (!sourceDirResult || sourceDirResult.length === 0) return;
     const sourceDir = sourceDirResult[0].fsPath;
 
-    // Enumerate .lean files
-    const leanFiles = findContentLeanFiles(sourceDir);
+    // Enumerate all .lean files recursively under the selected directory.
+    const leanFiles = findLeanFiles(sourceDir);
     if (leanFiles.length === 0) {
       vscode.window.showWarningMessage(
         `HTML Export: No .lean files found in:\n${sourceDir}`
@@ -567,7 +572,6 @@ export async function runHtmlExport(
       ``,
       `Output structure:`,
       `  ${projectName}_Separate_HTML/`,
-      `    _libs/`,
       dirPreview,
       `  LeanProject/  (source copy, .lake excluded)`,
       `  LeanProjectViewer.html`,
@@ -591,7 +595,6 @@ export async function runHtmlExport(
       async (progress) => {
         // --- Separate HTML export ---
         fs.mkdirSync(htmlDir, { recursive: true });
-        copyLibs(extensionUri, htmlDir);
 
         const contentsDir = htmlDir;
         let exported = 0;
@@ -603,7 +606,7 @@ export async function runHtmlExport(
             increment: 70 / leanFiles.length
           });
           try {
-            await exportSingleFile(extensionUri, leanFilePath, contentsDir, sourceDir, htmlDir);
+            await exportSingleFile(extensionUri, leanFilePath, contentsDir, sourceDir);
             exported++;
           } catch (e) {
             console.error(`HTML Export skip: ${leanFilePath}`, e);
@@ -710,35 +713,66 @@ document.getElementById('open-btn').addEventListener('click', function() {
 document.getElementById('dir-input').addEventListener('change', function(e) {
   var files = Array.from(e.target.files || []);
   leanFiles = [];
-  var pending = [];
+  var pendingText = [];
+  var pendingImages = [];
   for (var i = 0; i < files.length; i++) {
-    if (!files[i].name.endsWith('.lean')) continue;
-    // Skip root-level project files — only include .lean files inside subdirectories
-    var rel = files[i].webkitRelativePath.split('/').slice(1).join('/');
-    if (rel.indexOf('/') < 0) continue;
-    pending.push(files[i]);
+    if (files[i].name.endsWith('.lean')) pendingText.push(files[i]);
+    else if (/\\.(svg|png|jpg|jpeg|gif|webp)$/i.test(files[i].name)) pendingImages.push(files[i]);
   }
-  var loaded = 0;
-  if (pending.length === 0) { alert('No .lean files found.'); return; }
-  pending.forEach(function(f) {
+  
+  var loadedText = 0;
+  var loadedImages = 0;
+  var imageDataMap = {};
+
+  if (pendingText.length === 0) { alert('No .lean files found.'); return; }
+
+  function checkDone() {
+    if (loadedText === pendingText.length && loadedImages === pendingImages.length) {
+      leanFiles.sort(function(a, b) { return a.path.localeCompare(b.path); });
+      var parts = pendingText.length > 0 ? pendingText[0].webkitRelativePath.split('/') : ['Book Viewer'];
+      document.getElementById('book-title').textContent = (typeof BOOK_TITLE !== 'undefined' ? BOOK_TITLE : parts[0]) || 'Book Viewer';
+      buildBookTree();
+      document.getElementById('landing').style.display = 'none';
+      document.getElementById('book-sidebar').classList.add('active');
+      document.getElementById('page-area').classList.add('active');
+      
+      var imgDataEl = document.getElementById('svg-data');
+      if (!imgDataEl) {
+        imgDataEl = document.createElement('script');
+        imgDataEl.type = 'application/json';
+        imgDataEl.id = 'svg-data';
+        document.body.appendChild(imgDataEl);
+      }
+      imgDataEl.textContent = JSON.stringify(imageDataMap);
+      
+      loadFile(0);
+    }
+  }
+
+  pendingText.forEach(function(f) {
     var reader = new FileReader();
     reader.onload = function(ev) {
       var parts = f.webkitRelativePath.split('/');
-      // slice(2) skips the picker root AND the project subdirectory
-      var relPath = parts.slice(2).join('/');
+      var relPath = parts.slice(1).join('/');
       leanFiles.push({ path: relPath, name: f.name, content: ev.target.result });
-      loaded++;
-      if (loaded === pending.length) {
-        leanFiles.sort(function(a, b) { return a.path.localeCompare(b.path); });
-        document.getElementById('book-title').textContent = (typeof BOOK_TITLE !== 'undefined' ? BOOK_TITLE : parts[0]) || 'Book Viewer';
-        buildBookTree();
-        document.getElementById('landing').style.display = 'none';
-        document.getElementById('book-sidebar').classList.add('active');
-        document.getElementById('page-area').classList.add('active');
-        loadFile(0);
-      }
+      loadedText++;
+      checkDone();
     };
     reader.readAsText(f);
+  });
+  
+  pendingImages.forEach(function(f) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var parts = f.webkitRelativePath.split('/');
+      var relPath = parts.slice(1).join('/');
+      // Store under absolute path (relative to repo root) and relative form
+      imageDataMap[relPath] = ev.target.result;
+      imageDataMap['./' + relPath] = ev.target.result;
+      loadedImages++;
+      checkDone();
+    };
+    reader.readAsDataURL(f);
   });
 });
 
@@ -818,7 +852,8 @@ function renderBlocksSeq(blocks, nb, i, done) {
     el.className = cls;
     var _sdEl = document.getElementById('svg-data');
     var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd));
+    var _fpath = (typeof f !== 'undefined') ? f.path : null;
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd, _fpath));
     var codes = el.querySelectorAll('pre code');
     for (var c = 0; c < codes.length; c++) {
       if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
@@ -849,9 +884,23 @@ function renderBlocksSeq(blocks, nb, i, done) {
     var imgDataEl = document.getElementById('svg-data');
     try {
       var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
-      if (sd[b.path]) {
+      var absPath = b.path;
+      if (typeof f !== 'undefined' && f.path) {
+        var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
+        var parts = f.path.split('/');
+        parts.pop();
+        var relParts = rel.split('/');
+        for (var k=0; k<relParts.length; k++) {
+          if (relParts[k] === '.') continue;
+          if (relParts[k] === '..') parts.pop();
+          else parts.push(relParts[k]);
+        }
+        absPath = parts.join('/');
+      }
+      var uri = sd[absPath] || sd[b.path];
+      if (uri) {
         var imgEl = document.createElement('img');
-        imgEl.src = sd[b.path];
+        imgEl.src = uri;
         imgEl.alt = b.path || '';
         imgEl.style.maxWidth = '100%';
         imgWrap.appendChild(imgEl);
@@ -938,8 +987,8 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
   // Escape </script> in all inlined JS
   const esc = (s: string) => s.replace(/<\/script>/gi, '<\\/script>');
 
-  // Embed all .lean files
-  const leanFiles = findContentLeanFiles(sourceDir);
+  // Embed all .lean files recursively under sourceDir
+  const leanFiles = findLeanFiles(sourceDir);
   leanFiles.sort((a, b) => a.localeCompare(b));
   const leanScriptTags: string[] = [];
   const allImageDataMap: Record<string, string> = {};
@@ -957,8 +1006,8 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
 
   for (const lf of leanFiles) {
     const fullRel = path.relative(sourceDir, lf);
-    // Strip the first component (project name directory) from the path
-    const rel = fullRel.split(path.sep).slice(1).join('/');
+    // Use path relative to sourceDir directly (no slice)
+    const rel = fullRel.split(path.sep).join('/');
     const rawContent = fs.readFileSync(lf, 'utf8');
     const content = esc(rawContent);
     leanScriptTags.push(
@@ -1102,7 +1151,8 @@ function renderBlocksSeq(blocks, nb, i, done) {
     el.className = cls;
     var _sdEl = document.getElementById('svg-data');
     var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd));
+    var _fpath = (typeof f !== 'undefined') ? f.path : null;
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd, _fpath));
     var codes = el.querySelectorAll('pre code');
     for (var c = 0; c < codes.length; c++) {
       if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
@@ -1133,9 +1183,23 @@ function renderBlocksSeq(blocks, nb, i, done) {
     var imgDataEl = document.getElementById('svg-data');
     try {
       var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
-      if (sd[b.path]) {
+      var absPath = b.path;
+      if (typeof f !== 'undefined' && f.path) {
+        var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
+        var parts = f.path.split('/');
+        parts.pop();
+        var relParts = rel.split('/');
+        for (var k=0; k<relParts.length; k++) {
+          if (relParts[k] === '.') continue;
+          if (relParts[k] === '..') parts.pop();
+          else parts.push(relParts[k]);
+        }
+        absPath = parts.join('/');
+      }
+      var uri = sd[absPath] || sd[b.path];
+      if (uri) {
         var imgEl = document.createElement('img');
-        imgEl.src = sd[b.path];
+        imgEl.src = uri;
         imgEl.alt = b.path || '';
         imgEl.style.maxWidth = '100%';
         imgWrap.appendChild(imgEl);
