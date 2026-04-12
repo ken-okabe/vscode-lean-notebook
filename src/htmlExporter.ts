@@ -214,37 +214,12 @@ function loadFile(index) {
   var filePath = (typeof f !== 'undefined') ? f.path : null;
 
   renderBlocksSeq(blocks, nb, 0, function() {
-    var tocHtml = '', hi = 0;
-    var headings = nb.querySelectorAll('h1,h2,h3');
-    for (var h = 0; h < headings.length; h++) {
-      var id = 'h' + hi++; headings[h].id = id;
-      var clone = headings[h].cloneNode(true);
-      var anchors = clone.querySelectorAll('a');
-      for (var a = 0; a < anchors.length; a++) {
-        var anchor = anchors[a];
-        while (anchor.firstChild) anchor.parentNode.insertBefore(anchor.firstChild, anchor);
-        anchor.parentNode.removeChild(anchor);
-      }
-      var labelHtml = clone.innerHTML || '';
-      var plainLabel = clone.textContent || '';
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '" title="' + plainLabel + '">' + labelHtml + '</a>\\n';
-    }
-    document.getElementById('toc').innerHTML = tocHtml;
     var h1 = nb.querySelector('h1');
-    if (h1) {
-      document.getElementById('doc-title').textContent = h1.textContent;
-      document.title = h1.textContent + ' \\u2014 Lean Notebook';
-    } else {
+    if (!h1) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
-<<<<<<< HEAD
-    typesetMath(document.body);
-  });
-=======
-    typesetMath(nb);
   }, imageData, filePath);
->>>>>>> single-truth-refactor
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
   document.getElementById('vhtml').checked = true;
@@ -747,37 +722,12 @@ function loadFile(index) {
   var filePath = (typeof f !== 'undefined') ? f.path : null;
 
   renderBlocksSeq(blocks, nb, 0, function() {
-    var tocHtml = '', hi = 0;
-    var headings = nb.querySelectorAll('h1,h2,h3');
-    for (var h = 0; h < headings.length; h++) {
-      var id = 'h' + hi++; headings[h].id = id;
-      var clone = headings[h].cloneNode(true);
-      var anchors = clone.querySelectorAll('a');
-      for (var a = 0; a < anchors.length; a++) {
-        var anchor = anchors[a];
-        while (anchor.firstChild) anchor.parentNode.insertBefore(anchor.firstChild, anchor);
-        anchor.parentNode.removeChild(anchor);
-      }
-      var labelHtml = clone.innerHTML || '';
-      var plainLabel = clone.textContent || '';
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '" title="' + plainLabel + '">' + labelHtml + '</a>\\n';
-    }
-    document.getElementById('toc').innerHTML = tocHtml;
     var h1 = nb.querySelector('h1');
-    if (h1) {
-      document.getElementById('doc-title').textContent = h1.textContent;
-      document.title = h1.textContent + ' \\u2014 Lean Notebook';
-    } else {
+    if (!h1) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
-<<<<<<< HEAD
-    typesetMath(document.body);
-  });
-=======
-    typesetMath(nb);
   }, imageData, filePath);
->>>>>>> single-truth-refactor
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
   document.getElementById('vhtml').checked = true;
@@ -995,37 +945,12 @@ function loadFile(index) {
   var filePath = (typeof f !== 'undefined') ? f.path : null;
 
   renderBlocksSeq(blocks, nb, 0, function() {
-    var tocHtml = '', hi = 0;
-    var headings = nb.querySelectorAll('h1,h2,h3');
-    for (var h = 0; h < headings.length; h++) {
-      var id = 'h' + hi++; headings[h].id = id;
-      var clone = headings[h].cloneNode(true);
-      var anchors = clone.querySelectorAll('a');
-      for (var a = 0; a < anchors.length; a++) {
-        var anchor = anchors[a];
-        while (anchor.firstChild) anchor.parentNode.insertBefore(anchor.firstChild, anchor);
-        anchor.parentNode.removeChild(anchor);
-      }
-      var labelHtml = clone.innerHTML || '';
-      var plainLabel = clone.textContent || '';
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '" title="' + plainLabel + '">' + labelHtml + '</a>\\n';
-    }
-    document.getElementById('toc').innerHTML = tocHtml;
     var h1 = nb.querySelector('h1');
-    if (h1) {
-      document.getElementById('doc-title').textContent = h1.textContent;
-      document.title = h1.textContent + ' \\u2014 Lean Notebook';
-    } else {
+    if (!h1) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
-<<<<<<< HEAD
-    typesetMath(document.body);
-  });
-=======
-    typesetMath(nb);
   }, imageData, filePath);
->>>>>>> single-truth-refactor
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
   document.getElementById('vhtml').checked = true;

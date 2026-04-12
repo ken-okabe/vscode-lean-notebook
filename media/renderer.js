@@ -348,8 +348,7 @@ const MATHJAX_CONFIG = {
     startup: { typeset: false }
 };
 
-<<<<<<< HEAD
-=======
+
 // ----------------------------------------------------------------
 // Lean comment parser (port of leanCommentParser.ts)
 // ----------------------------------------------------------------
@@ -567,11 +566,32 @@ function parseLean(text) {
 // @param {string} [filePath] - source file path for relative image resolution
 // ================================================================
 function renderBlocksSeq(blocks, nb, i, done, imageData, filePath) {
-  if (i >= blocks.length) { done(); return; }
+  if (i >= blocks.length) {
+    groupIntoCards(nb);
+    var tocEl = document.getElementById('toc');
+    if (tocEl) {
+      generateTOC(nb, tocEl);
+    }
+    var h1 = nb.querySelector('h1');
+    var docTitle = document.getElementById('doc-title');
+    if (h1 && docTitle) {
+      docTitle.textContent = h1.textContent;
+      document.title = h1.textContent + ' — Lean Notebook';
+    }
+    if (typeof typesetMath !== 'undefined') {
+      var p = typesetMath(nb);
+      if (p && p.then) {
+        p.then(done).catch(function(e) { console.error(e); done(); });
+        return;
+      }
+    }
+    done();
+    return;
+  }
   var b = blocks[i];
 
-  if (b.type === 'module-doc' || b.type === 'doc-comment') {
-    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+  if (b.type === 'module-doc' || b.type === 'doc-comment' || b.type === 'text') {
+    var cls = b.type === 'doc-comment' ? 'block-doc-comment' : 'block-module-doc';
     var el = document.createElement('div');
     el.className = cls;
     var sd = imageData || {};
@@ -722,4 +742,58 @@ function renderBlocksSeq(blocks, nb, i, done, imageData, filePath) {
   }
 }
 
->>>>>>> single-truth-refactor
+
+// ----------------------------------------------------------------
+// Auto-generate Table of Contents (TOC)
+// ----------------------------------------------------------------
+function generateTOC(notebookEl, tocEl) {
+    if (!tocEl || !notebookEl) return;
+    const headings = notebookEl.querySelectorAll('h1, h2, h3');
+    if (headings.length === 0) {
+        tocEl.innerHTML = '';
+        return;
+    }
+    let tocHtml = '';
+    let headingIdx = 0;
+    headings.forEach(h => {
+        if (!h.id) {
+            h.id = 'toc-h-' + headingIdx++;
+        }
+        const tag = h.tagName.toLowerCase();
+        const clone = h.cloneNode(true);
+        const anchors = clone.querySelectorAll('a');
+        anchors.forEach(a => {
+            while (a.firstChild) a.parentNode.insertBefore(a.firstChild, a);
+            a.parentNode.removeChild(a);
+        });
+        const labelHtml = clone.innerHTML || '';
+        const plainLabel = (clone.textContent || '').replace(/"/g, '&quot;');
+        tocHtml += `<a href="#${h.id}" class="${tag}" title="${plainLabel}">${labelHtml}</a>\n`;
+    });
+    if (tocEl.innerHTML !== tocHtml) {
+        tocEl.innerHTML = tocHtml;
+        if (typeof typesetMath !== 'undefined') {
+            typesetMath(tocEl).catch(e => console.error("MathJax TOC error:", e));
+        }
+    }
+}
+
+// ----------------------------------------------------------------
+// Card Visual Grouping
+// Groups blocks into visually separated cards based on headings
+// ----------------------------------------------------------------
+function groupIntoCards(notebookEl) {
+    if (!notebookEl) return;
+    const children = Array.from(notebookEl.children);
+    let currentCard = null;
+    children.forEach(child => {
+        // Start a new card if the child contains a high-level header, or if there's no card yet
+        const hasHeader = child.querySelector('h1, h2');
+        if (hasHeader || !currentCard) {
+            currentCard = document.createElement('section');
+            currentCard.className = 'card';
+            notebookEl.insertBefore(currentCard, child);
+        }
+        currentCard.appendChild(child);
+    });
+}

@@ -288,13 +288,23 @@ body {
   margin-bottom: 10px;
 }
 
-/* --- module-doc: white card --- */
-.block-module-doc {
+/* --- Visual Cards (Groups of blocks) --- */
+.card {
   padding: 32px 36px;
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
+  margin-bottom: 10px;
+}
+
+.card > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* --- module-doc now inherits basic text rules but has no card styling, since cards wrap them --- */
+.block-module-doc {
+  /* No special boundary styling needed anymore */
 }
 
 /* --- doc-comment: left blue border --- */

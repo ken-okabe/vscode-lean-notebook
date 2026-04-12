@@ -32,13 +32,6 @@ try {
             container.innerHTML = '';
 
             renderBlocksSeq(newBlocks, container, 0, function() {
-                // Post-render: TOC, MathJax, signal completion
-                buildToc();
-                typesetMath(container).then(function() {
-                    var tocEl = document.getElementById('toc');
-                    if (tocEl) typesetMath(tocEl);
-                });
-
                 if (window.vscode) {
                     vscode.postMessage({ command: 'renderingComplete' });
                 }
@@ -74,73 +67,6 @@ try {
     if (vscode) {
         vscode.postMessage({ command: 'ready' });
         console.log('[main.js] Sent ready signal');
-    }
-
-    // ================================================================
-    // Auto-generate Table of Contents (TOC)
-    // Scans h1/h2/h3 inside #notebook and adds links to the sidebar.
-    // ================================================================
-    function buildToc() {
-        const toc = document.getElementById('toc');
-        if (!toc) return;
-
-        const notebook = document.getElementById('notebook');
-        if (!notebook) return;
-
-        const headings = notebook.querySelectorAll('h1, h2, h3');
-        if (headings.length === 0) {
-            toc.innerHTML = '';
-            return;
-        }
-
-        let tocHtml = '';
-        let headingIdx = 0;
-        headings.forEach(h => {
-            // Assign an ID if missing
-            if (!h.id) {
-                h.id = 'toc-h-' + headingIdx++;
-            }
-            const tag = h.tagName.toLowerCase(); // h1 / h2 / h3
-            const cls = tag;                     // .h1 / .h2 / .h3
-<<<<<<< HEAD
-            
-            // Clone heading and strip anchors so links aren't nested in TOC
-=======
-            // Clone to strip anchor tags for clean label
->>>>>>> single-truth-refactor
-            const clone = h.cloneNode(true);
-            const anchors = clone.querySelectorAll('a');
-            anchors.forEach(a => {
-                while (a.firstChild) a.parentNode.insertBefore(a.firstChild, a);
-                a.parentNode.removeChild(a);
-            });
-            const labelHtml = clone.innerHTML || '';
-<<<<<<< HEAD
-            const plainLabel = clone.textContent || '';
-            
-=======
-            const plainLabel = (clone.textContent || '').replace(/"/g, '&quot;');
->>>>>>> single-truth-refactor
-            tocHtml += `<a href="#${h.id}" class="${cls}" title="${plainLabel}">${labelHtml}</a>\n`;
-        });
-
-        if (toc.innerHTML !== tocHtml) {
-            toc.innerHTML = tocHtml;
-            if (typeof typesetMath !== 'undefined') {
-                typesetMath(toc).catch(e => console.error("MathJax TOC error:", e));
-            }
-        }
-    }
-
-    // Observe DOM mutations to rebuild TOC
-    const tocObserver = new MutationObserver(() => {
-        // Debounce: run once per burst of updates
-        clearTimeout(tocObserver._timer);
-        tocObserver._timer = setTimeout(buildToc, 200);
-    });
-    const appEl = document.getElementById('notebook');
-    if (appEl) {
-        tocObserver.observe(appEl, { childList: true, subtree: true });
     }
 
 } catch (err) {
