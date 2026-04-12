@@ -2,310 +2,50 @@
 import van from './van.min.js';
 
 // --- VanJS Tags ---
-const { div, span, pre, code, button, a } = van.tags;
+const { div } = van.tags;
 
-// hlLean, mdToHtml, wrapDisplayMath, parseLean etc. are provided by renderer.js
+// hlLean, mdToHtml, renderBlocksSeq, parseLean etc. are provided by renderer.js
 // which is loaded as a plain <script> before this module in NotebookPanel.ts.
 
 try {
     // --- State Management ---
-    // We hold the list of *Block Objects* (with IDs).
     const blocksState = van.state([]);
 
-    // --- Keyed List Component ---
-    // This is the core of the rewrite. It renders the list of blocks using IDs as keys.
-    // If an ID is present in the new list, the existing DOM node is preserved.
-    // If the content *within* that ID changed (checked via strict equality of the block object?), 
-    // we might need to update the internal component. 
-    // BUT, our ID generation includes content hash. So if content changes, ID changes.
-    // Therefore:
-    // 1. Same ID = Same Content -> reused DOM, no re-render.
-    // 2. Diff ID = New Content -> new DOM, full render.
-    // This simplifies "updates" to just "identity match".
-    // The only exception is 'outputs' in code blocks, which might change while content stays same.
-    // (Wait, code block ID currently includes *source* but not *outputs*? 
-    //  Start with source-based ID. If outputs change, we need to handle that.)
-
-    // REVISION: `generateBlockId` hashes `content`. Code block source is content. 
-    // Outputs are extrinsic.
-    // IF outputs change, the CodeBlock ID is the SAME (since source is same).
-    // So proper Keyed List must detect that `props` changed for the same `id`.
-
-    // VanJS `list` function allows efficient keyed rendering.
-    // But we need to handle the "Same ID, New Props" case for Code Blocks having new outputs.
-
+    // --- App ---
+    // Uses renderBlocksSeq from renderer.js (Single Source of Truth).
+    // VanJS is used only for reactive state management — when blocksState changes,
+    // the notebook is re-rendered using the shared rendering function.
     const App = () => {
-        // We use a custom list renderer or vanX. 
-        // Since we don't have vanX, we implement a simple keyed reconciler or use `van.derive`.
-        // Actually, `van.state` containing an array replaced entirely triggers a full rebuild in naive usage.
-        // We need a smart list component.
-
-        // Let's implement a robust "SmartList" that syncs a container with the blocksState.
         const container = document.getElementById('notebook');
 
-        // Track existing components by ID
-        const componentCache = new Map(); // id -> { dom: HTMLElement, block: BlockData, controller: AbortController }
+        // Track previous blocks for diffing (avoid full re-render when only outputs change)
+        let prevBlocksJson = '';
 
         van.derive(() => {
             const newBlocks = blocksState.val;
+            const newJson = JSON.stringify(newBlocks);
 
-            // 1. Mark all as stale
-            const staleIds = new Set(componentCache.keys());
+            // Skip if nothing changed
+            if (newJson === prevBlocksJson) return;
+            prevBlocksJson = newJson;
 
-            // 2. Build new children list (reusing or creating)
-            const newChildren = [];
+            container.innerHTML = '';
 
-            for (const block of newBlocks) {
-                staleIds.delete(block.id);
+            renderBlocksSeq(newBlocks, container, 0, function() {
+                // Post-render: TOC, MathJax, signal completion
+                buildToc();
+                typesetMath(container).then(function() {
+                    var tocEl = document.getElementById('toc');
+                    if (tocEl) typesetMath(tocEl);
+                });
 
-                let cached = componentCache.get(block.id);
-
-                if (cached) {
-                    // Check if we need to update the existing component (e.g. outputs changed)
-                    // Source/Content changes would result in different ID, so only extrinsic data matters here.
-                    if (block.type === 'code') {
-                        // Update outputs if needed
-                        if (JSON.stringify(block.outputs) !== JSON.stringify(cached.block.outputs)) {
-                            console.log(`[App] Updating outputs for block ${block.id}`);
-                            if (cached.controller) cached.controller.abort();
-                            const controller = new AbortController();
-                            const dom = renderBlock(block, controller.signal);
-                            componentCache.set(block.id, { dom, block, controller });
-                            newChildren.push(dom);
-                            continue;
-                        }
-                    }
-
-                    // Image file blocks: re-render when content becomes available or changes
-                    if (block.type === 'image-file') {
-                        const oldContent = cached.block.content;
-                        const newContent = block.content;
-                        if (oldContent !== newContent) {
-                            console.log(`[App] Image content changed for block ${block.id}`);
-                            if (cached.controller) cached.controller.abort();
-                            const controller = new AbortController();
-                            const dom = renderBlock(block, controller.signal);
-                            componentCache.set(block.id, { dom, block, controller });
-                            newChildren.push(dom);
-                            continue;
-                        }
-                    }
-
-                    // Reuse existing
-                    newChildren.push(cached.dom);
-                } else {
-                    // Create new
-                    // console.log(`[App] Creating new block ${block.id}`);
-                    const controller = new AbortController();
-                    const dom = renderBlock(block, controller.signal);
-                    componentCache.set(block.id, { dom, block, controller });
-                    newChildren.push(dom);
-                }
-            }
-
-            // 3. Cleanup stale components (abort tasks)
-            for (const id of staleIds) {
-                // console.log(`[App] Removing stale block ${id}`);
-                const cached = componentCache.get(id);
-                if (cached.controller) cached.controller.abort();
-                componentCache.delete(id);
-            }
-
-            // 4. Update DOM
-            // VanJS replaceChildren is efficient enough?
-            container.replaceChildren(...newChildren);
-
-            // Signal completion
-            setTimeout(() => {
                 if (window.vscode) {
                     vscode.postMessage({ command: 'renderingComplete' });
                 }
-            }, 0);
+            });
         });
 
         return container;
-    };
-
-    // --- Block Renderer ---
-    function renderBlock(block, signal) {
-        if (signal.aborted) return div();
-
-        switch (block.type) {
-            case 'code': return CodeComponent(block, signal);
-            case 'markdown': // legacy name mapping
-            case 'text': return MarkdownComponent(block.content, signal, "block-doc-comment");
-            case 'module-doc': return MarkdownComponent(block.content, signal, "block-module-doc");
-            case 'doc-comment': return MarkdownComponent(block.content, signal, "block-doc-comment");
-            case 'mermaid': return MermaidComponent(block.content || block.source, signal);
-            case 'graphviz': return GraphvizComponent(block.content || block.source, signal);
-            case 'image-file': return ImageFileComponent(block, signal);
-            default: return div(`Unknown block type: ${block.type}`);
-        }
-    }
-
-    // --- Components ---
-
-    const MarkdownComponent = (content, signal, className) => {
-        const dom = div({ class: className });
-        // Initial content (raw or loading?) 
-        // Setting raw innerHTML might flash unstyled.
-        // We construct the HTML synchronously if possible, or async.
-        // marked is sync.
-
-        try {
-            if (window.marked) {
-                marked.setOptions({ gfm: true, breaks: true });
-                // Use shared mdToHtml from renderer.js
-                dom.innerHTML = mdToHtml(content);
-            } else {
-                dom.textContent = content;
-            }
-        } catch (e) {
-            dom.textContent = "Error parsing Markdown";
-        }
-
-        // Effects (hl, MathJax)
-        setTimeout(async () => {
-            if (signal.aborted) return;
-
-            // Highlight ```lean code fences inside Markdown with hlLean()
-            dom.querySelectorAll('pre code').forEach(el => {
-                if (signal.aborted) return;
-                const isLean = el.classList.contains('language-lean') ||
-                    el.classList.contains('language-lean4');
-                if (isLean) {
-                    // hlLean returns pre-escaped HTML string → set via innerHTML
-                    el.innerHTML = hlLean(el.textContent || '');
-                }
-            });
-
-            // MathJax — use shared typesetMath() from renderer.js (single source of truth)
-            if (!signal.aborted) await typesetMath(dom);
-        }, 0);
-
-        return dom;
-    };
-
-    const CodeComponent = (block, signal) => {
-        // Interleave outputs
-        const source = block.source;
-        const outputs = block.outputs || [];
-
-        // Separate outputs into inline (interleaved in code) and rich (rendered after code)
-        const inlineOutputs = [];
-        const richOutputs = [];
-        outputs.forEach(o => {
-            if (o.severity === -1) {
-                // Proof status — always inline
-                inlineOutputs.push(o);
-            } else if (typeof hasEvalSVG === 'function' && hasEvalSVG(o.content)) {
-                // Contains SVG markers — render as rich output after code block
-                richOutputs.push(o);
-            } else {
-                // Plain text — inline
-                inlineOutputs.push(o);
-            }
-        });
-
-        // Construct display text with inline outputs only
-        const lines = source.split(/\r?\n/);
-        const resultLines = [];
-
-        const inlineByLine = new Map();
-        inlineOutputs.forEach(o => {
-            if (!inlineByLine.has(o.line)) inlineByLine.set(o.line, []);
-            inlineByLine.get(o.line).push(o);
-        });
-
-        for (let i = 0; i < lines.length; i++) {
-            resultLines.push(lines[i]);
-            if (inlineByLine.has(i)) {
-                inlineByLine.get(i).forEach(out => {
-                    if (out.severity === -1) {
-                        resultLines.push(`-- ✓`);
-                    } else {
-                        resultLines.push(`-- Evaluated: ${out.content}`);
-                    }
-                });
-            }
-        }
-
-        const displaySource = resultLines.join('\n');
-
-        // Header bar
-        const header = div({ class: "block-code-header" }, "lean4");
-        // Syntax highlighting via hlLean() (no Prism dependency)
-        const preEl = pre({ class: "lean-source" });
-        preEl.innerHTML = hlLean(displaySource);
-        const dom = div({ class: "block-code" }, header, preEl);
-
-        // Render rich outputs (SVG-containing) after the code block
-        if (richOutputs.length > 0 && typeof parseEvalOutput === 'function') {
-            for (const out of richOutputs) {
-                const segments = parseEvalOutput(out.content);
-                for (const seg of segments) {
-                    if (seg.type === 'svg') {
-                        const svgDiv = document.createElement('div');
-                        svgDiv.className = 'lean-svg-output';
-                        svgDiv.innerHTML = seg.content;
-                        dom.appendChild(svgDiv);
-                    } else {
-                        const textDiv = document.createElement('div');
-                        textDiv.className = 'lean-eval-text';
-                        const textPre = document.createElement('pre');
-                        textPre.textContent = seg.content;
-                        textDiv.appendChild(textPre);
-                        dom.appendChild(textDiv);
-                    }
-                }
-            }
-        }
-
-        return dom;
-    };
-
-    const MermaidComponent = (source, signal) => {
-        const dom = div({ class: "block-mermaid" });
-
-        setTimeout(async () => {
-            if (signal.aborted) return;
-            // Use shared renderMermaid() from renderer.js
-            await renderMermaid(source, dom);
-        }, 0);
-
-        return dom;
-    };
-
-    const GraphvizComponent = (source, signal) => {
-        const dom = div({ class: "block-graphviz" });
-
-        setTimeout(async () => {
-            if (signal.aborted) return;
-            // Use shared renderGraphviz() from renderer.js
-            await renderGraphviz(source, dom);
-        }, 0);
-
-        return dom;
-    };
-
-    const ImageFileComponent = (block, signal) => {
-        if (block.content) {
-            // block.content is a data URI (works for SVG, PNG, JPEG, etc.)
-            const dom = div({ class: "lean-image-output" });
-            const img = document.createElement('img');
-            img.src = block.content;
-            img.alt = block.path || '';
-            img.style.maxWidth = '100%';
-            dom.appendChild(img);
-            return dom;
-        } else {
-            const dom = div({ class: "lean-image-output" });
-            dom.style.color = '#94a3b8';
-            dom.style.fontStyle = 'italic';
-            dom.style.fontSize = '0.85em';
-            dom.textContent = `Image not found: ${block.path || 'unknown'}`;
-            return dom;
-        }
     };
 
     // --- Initialization ---
@@ -324,22 +64,13 @@ try {
     });
 
     function scrollToLine(line) {
-        // Simple implementation: try to find a block near that line?
-        // Since we don't have block-line mapping easily in DOM, 
-        // maybe we just rely on percentage or rough estimate?
-        // Existing logic was percentage based? 
-        // actually, let's look at the elements.
-        // For now, simple scroll.
-        // If the parser provides range, we could attach data-line attributes.
-        // Let's rely on native scroll interaction for now or fix later.
+        // Simple implementation — can be enhanced later with data-line attributes.
     }
 
     // App() manages #notebook directly via van.derive — no return value needed.
     App();
 
     // Signal to extension host that main.js is ready to receive messages.
-    // This completes the handshake — _update() in NotebookPanel.ts waits
-    // for this signal before posting 'update' messages.
     if (vscode) {
         vscode.postMessage({ command: 'ready' });
         console.log('[main.js] Sent ready signal');
@@ -348,7 +79,6 @@ try {
     // ================================================================
     // Auto-generate Table of Contents (TOC)
     // Scans h1/h2/h3 inside #notebook and adds links to the sidebar.
-    // Regenerated on every DOM mutation via MutationObserver.
     // ================================================================
     function buildToc() {
         const toc = document.getElementById('toc');
@@ -372,8 +102,16 @@ try {
             }
             const tag = h.tagName.toLowerCase(); // h1 / h2 / h3
             const cls = tag;                     // .h1 / .h2 / .h3
-            const label = h.textContent || '';
-            tocHtml += `<a href="#${h.id}" class="${cls}" title="${label}">${label}</a>\n`;
+            // Clone to strip anchor tags for clean label
+            const clone = h.cloneNode(true);
+            const anchors = clone.querySelectorAll('a');
+            anchors.forEach(a => {
+                while (a.firstChild) a.parentNode.insertBefore(a.firstChild, a);
+                a.parentNode.removeChild(a);
+            });
+            const labelHtml = clone.innerHTML || '';
+            const plainLabel = (clone.textContent || '').replace(/"/g, '&quot;');
+            tocHtml += `<a href="#${h.id}" class="${cls}" title="${plainLabel}">${labelHtml}</a>\n`;
         });
 
         toc.innerHTML = tocHtml;
@@ -400,4 +138,3 @@ try {
     }
     console.error("Renderer Error:", err);
 }
-

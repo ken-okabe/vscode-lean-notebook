@@ -551,3 +551,172 @@ function inlineImageMarkers(content, imageData, textFilePath) {
 function parseLean(text) {
     return splitLeanDocComments(text).flatMap(b => expandCommentBlock(b));
 }
+
+// ================================================================
+// renderBlocksSeq — Single Source of Truth block renderer
+// Used by BOTH the VSCode WebView (main.js) AND HTML export.
+// Renders parsed blocks sequentially into a DOM container.
+//
+// @param {Array} blocks  - parsed block array from parseLean()
+// @param {HTMLElement} nb - target container (#notebook)
+// @param {number} i       - current index (start with 0)
+// @param {Function} done  - callback when all blocks rendered
+// @param {Object} [imageData]  - image data map {path: dataURI}
+// @param {string} [filePath] - source file path for relative image resolution
+// ================================================================
+function renderBlocksSeq(blocks, nb, i, done, imageData, filePath) {
+  if (i >= blocks.length) { done(); return; }
+  var b = blocks[i];
+
+  if (b.type === 'module-doc' || b.type === 'doc-comment') {
+    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+    var el = document.createElement('div');
+    el.className = cls;
+    var sd = imageData || {};
+    var fp = filePath || null;
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, sd, fp));
+    var codes = el.querySelectorAll('pre code');
+    for (var c = 0; c < codes.length; c++) {
+      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
+        codes[c].innerHTML = hlLean(codes[c].textContent || '');
+      }
+    }
+    nb.appendChild(el);
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+
+  } else if (b.type === 'code') {
+    var el2 = document.createElement('div');
+    el2.className = 'block-code';
+
+    // Support block.outputs (WebView #eval results).
+    // In HTML export, outputs is undefined/empty — this is safely skipped.
+    var source = b.source;
+    var outputs = b.outputs || [];
+    var inlineOutputs = [];
+    var richOutputs = [];
+    for (var oi = 0; oi < outputs.length; oi++) {
+      var o = outputs[oi];
+      if (o.severity === -1) {
+        inlineOutputs.push(o);
+      } else if (typeof hasEvalSVG === 'function' && hasEvalSVG(o.content)) {
+        richOutputs.push(o);
+      } else {
+        inlineOutputs.push(o);
+      }
+    }
+
+    // Build display source with interleaved inline outputs
+    var lines = source.split(/\r?\n/);
+    var resultLines = [];
+    var inlineByLine = {};
+    for (var il = 0; il < inlineOutputs.length; il++) {
+      var lineNum = inlineOutputs[il].line;
+      if (!inlineByLine[lineNum]) inlineByLine[lineNum] = [];
+      inlineByLine[lineNum].push(inlineOutputs[il]);
+    }
+    for (var li = 0; li < lines.length; li++) {
+      resultLines.push(lines[li]);
+      if (inlineByLine[li]) {
+        for (var oli = 0; oli < inlineByLine[li].length; oli++) {
+          var out = inlineByLine[li][oli];
+          if (out.severity === -1) {
+            resultLines.push('-- \u2713');
+          } else {
+            resultLines.push('-- Evaluated: ' + out.content);
+          }
+        }
+      }
+    }
+    var displaySource = resultLines.join('\n');
+
+    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(displaySource) + '</pre>';
+
+    // Render rich outputs (SVG-containing) after the code block
+    if (richOutputs.length > 0 && typeof parseEvalOutput === 'function') {
+      for (var ri = 0; ri < richOutputs.length; ri++) {
+        var segments = parseEvalOutput(richOutputs[ri].content);
+        for (var si = 0; si < segments.length; si++) {
+          var seg = segments[si];
+          if (seg.type === 'svg') {
+            var svgDiv = document.createElement('div');
+            svgDiv.className = 'lean-svg-output';
+            svgDiv.innerHTML = seg.content;
+            el2.appendChild(svgDiv);
+          } else {
+            var textDiv = document.createElement('div');
+            textDiv.className = 'lean-eval-text';
+            var textPre = document.createElement('pre');
+            textPre.textContent = seg.content;
+            textDiv.appendChild(textPre);
+            el2.appendChild(textDiv);
+          }
+        }
+      }
+    }
+
+    nb.appendChild(el2);
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+
+  } else if (b.type === 'mermaid') {
+    var wrap = document.createElement('div');
+    wrap.className = 'block-mermaid';
+    nb.appendChild(wrap);
+    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath); });
+
+  } else if (b.type === 'graphviz') {
+    var wrap2 = document.createElement('div');
+    wrap2.className = 'block-graphviz';
+    nb.appendChild(wrap2);
+    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath); });
+
+  } else if (b.type === 'image-file') {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'lean-image-output';
+
+    // WebView path: NotebookPanel sets block.content to data URI directly
+    if (b.content) {
+      var imgEl = document.createElement('img');
+      imgEl.src = b.content;
+      imgEl.alt = b.path || '';
+      imgEl.style.maxWidth = '100%';
+      imgWrap.appendChild(imgEl);
+    } else {
+      // HTML export path: lookup from imageData map
+      var sd2 = imageData || {};
+      try {
+        var absPath = b.path;
+        if (filePath) {
+          var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
+          var parts = filePath.split('/');
+          parts.pop();
+          var relParts = rel.split('/');
+          for (var k = 0; k < relParts.length; k++) {
+            if (relParts[k] === '.') continue;
+            if (relParts[k] === '..') parts.pop();
+            else parts.push(relParts[k]);
+          }
+          absPath = parts.join('/');
+        }
+        var uri = sd2[absPath] || sd2[b.path];
+        if (uri) {
+          var imgEl2 = document.createElement('img');
+          imgEl2.src = uri;
+          imgEl2.alt = b.path || '';
+          imgEl2.style.maxWidth = '100%';
+          imgWrap.appendChild(imgEl2);
+        } else {
+          imgWrap.style.color = '#94a3b8';
+          imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown');
+        }
+      } catch(e) {
+        imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown');
+      }
+    }
+    nb.appendChild(imgWrap);
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+
+  } else {
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+  }
+}
+
