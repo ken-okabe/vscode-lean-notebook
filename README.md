@@ -97,7 +97,7 @@ All formats work **fully offline** — no internet connection or server required
 
 LeanNotebook can display images (SVG, PNG, JPEG, GIF, WebP) using `@image` markers in doc comments. Simply point to any image file using a path relative to the `.lean` file.
 
-### Example
+### Example..
 
 ```lean
 -- Your .lean file (e.g. MyDocument.lean)
