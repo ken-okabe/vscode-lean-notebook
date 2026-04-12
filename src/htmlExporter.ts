@@ -59,34 +59,7 @@ function copyProjectFiles(sourceDir: string, destDir: string): void {
   }
 }
 
-function buildHtml(extensionUri: vscode.Uri, leanSource: string, libsRelPath: string = './_libs'): string {
-  const templatePath = vscode.Uri.joinPath(extensionUri, 'media', 'template.html');
-  const rendererPath = vscode.Uri.joinPath(extensionUri, 'media', 'renderer.js');
-  const stylePath = vscode.Uri.joinPath(extensionUri, 'media', 'style.css');
 
-  let template = fs.readFileSync(templatePath.fsPath, 'utf8');
-  const rendererJs = fs.readFileSync(rendererPath.fsPath, 'utf8');
-  const styleCss = fs.readFileSync(stylePath.fsPath, 'utf8');
-
-  // Replace _libs/ paths with the correct relative path for this file's depth.
-  template = template.replace(/\.\/\_libs/g, libsRelPath);
-
-  // Inject style.css — single source of truth for all styles.
-  template = template.replace('%%STYLES%%', () => styleCss);
-
-  // Inject MATHJAX_CONFIG from renderer.js — single source of truth.
-  const mathJaxConfigJson = extractMathJaxConfig(rendererJs);
-  template = template.replace('%%MATHJAX_CONFIG%%', () => mathJaxConfigJson);
-
-  // Inline renderer.js — escape </script> to prevent early tag closure.
-  const safeRendererJs = rendererJs.replace(/<\/script>/gi, '<\\/script>');
-  template = template.replace('%%RENDERER_JS%%', () => safeRendererJs);
-
-  // Embed the Lean source — escape </script> to prevent early tag closure.
-  const safeLeanSource = leanSource.replace(/<\/script>/gi, '<\\/script>');
-  template = template.replace('%%LEAN_SOURCE%%', () => safeLeanSource);
-  return template;
-}
 
 /**
  * Return a unique output path to avoid overwriting existing files.
@@ -210,7 +183,7 @@ function buildSingleFileHtml(extensionUri: vscode.Uri, leanFilePath: string): st
       }
     }
   }
-  const svgDataJson = esc(JSON.stringify(imageDataMap));
+  const imageDataJson = esc(JSON.stringify(imageDataMap));
 
   // Viewer JS — reads from the single embedded <script type="text/x-lean-source"> tag.
   // No sidebar (only one file), auto-loads immediately.
@@ -236,6 +209,10 @@ function loadFile(index) {
   var rawPre = document.getElementById('lean-raw-pre');
   rawPre.innerHTML = hlLean(f.content);
   var blocks = parseLean(f.content);
+  var imgDataEl = document.getElementById('image-data');
+  var imageData = imgDataEl ? (function() { try { return JSON.parse(imgDataEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
+  var filePath = (typeof f !== 'undefined') ? f.path : null;
+
   renderBlocksSeq(blocks, nb, 0, function() {
     var tocHtml = '', hi = 0;
     var headings = nb.querySelectorAll('h1,h2,h3');
@@ -261,81 +238,16 @@ function loadFile(index) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
+<<<<<<< HEAD
     typesetMath(document.body);
   });
+=======
+    typesetMath(nb);
+  }, imageData, filePath);
+>>>>>>> single-truth-refactor
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
   document.getElementById('vhtml').checked = true;
-}
-
-function renderBlocksSeq(blocks, nb, i, done) {
-  if (i >= blocks.length) { done(); return; }
-  var b = blocks[i];
-  if (b.type === 'module-doc' || b.type === 'doc-comment') {
-    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
-    var el = document.createElement('div');
-    el.className = cls;
-    var _sdEl = document.getElementById('svg-data');
-    var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    var _fpath = (typeof f !== 'undefined') ? f.path : null;
-    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd, _fpath));
-    var codes = el.querySelectorAll('pre code');
-    for (var c = 0; c < codes.length; c++) {
-      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
-        codes[c].innerHTML = hlLean(codes[c].textContent || '');
-      }
-    }
-    nb.appendChild(el);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else if (b.type === 'code') {
-    var el2 = document.createElement('div');
-    el2.className = 'block-code';
-    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
-    nb.appendChild(el2);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else if (b.type === 'mermaid') {
-    var wrap = document.createElement('div');
-    wrap.className = 'block-mermaid';
-    nb.appendChild(wrap);
-    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'graphviz') {
-    var wrap2 = document.createElement('div');
-    wrap2.className = 'block-graphviz';
-    nb.appendChild(wrap2);
-    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'image-file') {
-    var imgWrap = document.createElement('div');
-    imgWrap.className = 'lean-image-output';
-    var imgDataEl = document.getElementById('svg-data');
-    try {
-      var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
-      var absPath = b.path;
-      if (typeof f !== 'undefined' && f.path) {
-        var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
-        var parts = f.path.split('/');
-        parts.pop();
-        var relParts = rel.split('/');
-        for (var k=0; k<relParts.length; k++) {
-          if (relParts[k] === '.') continue;
-          if (relParts[k] === '..') parts.pop();
-          else parts.push(relParts[k]);
-        }
-        absPath = parts.join('/');
-      }
-      var uri = sd[absPath] || sd[b.path];
-      if (uri) {
-        var imgEl = document.createElement('img');
-        imgEl.src = uri;
-        imgEl.alt = b.path || '';
-        imgEl.style.maxWidth = '100%';
-        imgWrap.appendChild(imgEl);
-      } else { imgWrap.style.color = '#94a3b8'; imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
-    } catch(e) { imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
-    nb.appendChild(imgWrap);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else {
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  }
 }
 
 document.querySelectorAll('input[name="view"]').forEach(function(radio) {
@@ -375,7 +287,7 @@ document.querySelectorAll('input[name="view"]').forEach(function(radio) {
     '<div id="lean-raw"><pre id="lean-raw-pre"></pre></div>',
     '</div>',
     // Embedded SVG data
-    '<script type="application/json" id="svg-data">' + svgDataJson + '<' + '/script>',
+    '<script type="application/json" id="image-data">' + imageDataJson + '<' + '/script>',
     // Scripts
     '<script>' + esc(rendererJs) + '<' + '/script>',
     '<script>' + esc(viewerJs) + '<' + '/script>',
@@ -745,11 +657,11 @@ document.getElementById('dir-input').addEventListener('change', function(e) {
       document.getElementById('book-sidebar').classList.add('active');
       document.getElementById('page-area').classList.add('active');
       
-      var imgDataEl = document.getElementById('svg-data');
+      var imgDataEl = document.getElementById('image-data');
       if (!imgDataEl) {
         imgDataEl = document.createElement('script');
         imgDataEl.type = 'application/json';
-        imgDataEl.id = 'svg-data';
+        imgDataEl.id = 'image-data';
         document.body.appendChild(imgDataEl);
       }
       imgDataEl.textContent = JSON.stringify(imageDataMap);
@@ -829,6 +741,11 @@ function loadFile(index) {
   var rawPre = document.getElementById('lean-raw-pre');
   rawPre.innerHTML = hlLean(f.content);
   var blocks = parseLean(f.content);
+
+  var imgDataEl = document.getElementById('image-data');
+  var imageData = imgDataEl ? (function() { try { return JSON.parse(imgDataEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
+  var filePath = (typeof f !== 'undefined') ? f.path : null;
+
   renderBlocksSeq(blocks, nb, 0, function() {
     var tocHtml = '', hi = 0;
     var headings = nb.querySelectorAll('h1,h2,h3');
@@ -854,81 +771,16 @@ function loadFile(index) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
+<<<<<<< HEAD
     typesetMath(document.body);
   });
+=======
+    typesetMath(nb);
+  }, imageData, filePath);
+>>>>>>> single-truth-refactor
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
   document.getElementById('vhtml').checked = true;
-}
-
-function renderBlocksSeq(blocks, nb, i, done) {
-  if (i >= blocks.length) { done(); return; }
-  var b = blocks[i];
-  if (b.type === 'module-doc' || b.type === 'doc-comment') {
-    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
-    var el = document.createElement('div');
-    el.className = cls;
-    var _sdEl = document.getElementById('svg-data');
-    var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    var _fpath = (typeof f !== 'undefined') ? f.path : null;
-    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd, _fpath));
-    var codes = el.querySelectorAll('pre code');
-    for (var c = 0; c < codes.length; c++) {
-      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
-        codes[c].innerHTML = hlLean(codes[c].textContent || '');
-      }
-    }
-    nb.appendChild(el);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else if (b.type === 'code') {
-    var el2 = document.createElement('div');
-    el2.className = 'block-code';
-    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
-    nb.appendChild(el2);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else if (b.type === 'mermaid') {
-    var wrap = document.createElement('div');
-    wrap.className = 'block-mermaid';
-    nb.appendChild(wrap);
-    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'graphviz') {
-    var wrap2 = document.createElement('div');
-    wrap2.className = 'block-graphviz';
-    nb.appendChild(wrap2);
-    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'image-file') {
-    var imgWrap = document.createElement('div');
-    imgWrap.className = 'lean-image-output';
-    var imgDataEl = document.getElementById('svg-data');
-    try {
-      var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
-      var absPath = b.path;
-      if (typeof f !== 'undefined' && f.path) {
-        var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
-        var parts = f.path.split('/');
-        parts.pop();
-        var relParts = rel.split('/');
-        for (var k=0; k<relParts.length; k++) {
-          if (relParts[k] === '.') continue;
-          if (relParts[k] === '..') parts.pop();
-          else parts.push(relParts[k]);
-        }
-        absPath = parts.join('/');
-      }
-      var uri = sd[absPath] || sd[b.path];
-      if (uri) {
-        var imgEl = document.createElement('img');
-        imgEl.src = uri;
-        imgEl.alt = b.path || '';
-        imgEl.style.maxWidth = '100%';
-        imgWrap.appendChild(imgEl);
-      } else { imgWrap.style.color = '#94a3b8'; imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
-    } catch(e) { imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
-    nb.appendChild(imgWrap);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else {
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  }
 }
 
 document.querySelectorAll('input[name="view"]').forEach(function(radio) {
@@ -1051,7 +903,7 @@ function buildAllInOneHtml(extensionUri: vscode.Uri, sourceDir: string, bookTitl
       }
     }
   }
-  const allSvgDataJson = esc(JSON.stringify(allImageDataMap));
+  const allImageDataJson = esc(JSON.stringify(allImageDataMap));
 
   // Viewer CSS (same as viewer-template.html)
   const viewerCss = `
@@ -1137,6 +989,11 @@ function loadFile(index) {
   var rawPre = document.getElementById('lean-raw-pre');
   rawPre.innerHTML = hlLean(f.content);
   var blocks = parseLean(f.content);
+
+  var imgDataEl = document.getElementById('image-data');
+  var imageData = imgDataEl ? (function() { try { return JSON.parse(imgDataEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
+  var filePath = (typeof f !== 'undefined') ? f.path : null;
+
   renderBlocksSeq(blocks, nb, 0, function() {
     var tocHtml = '', hi = 0;
     var headings = nb.querySelectorAll('h1,h2,h3');
@@ -1162,81 +1019,16 @@ function loadFile(index) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
+<<<<<<< HEAD
     typesetMath(document.body);
   });
+=======
+    typesetMath(nb);
+  }, imageData, filePath);
+>>>>>>> single-truth-refactor
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
   document.getElementById('vhtml').checked = true;
-}
-
-function renderBlocksSeq(blocks, nb, i, done) {
-  if (i >= blocks.length) { done(); return; }
-  var b = blocks[i];
-  if (b.type === 'module-doc' || b.type === 'doc-comment') {
-    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
-    var el = document.createElement('div');
-    el.className = cls;
-    var _sdEl = document.getElementById('svg-data');
-    var _sd = _sdEl ? (function() { try { return JSON.parse(_sdEl.textContent || '{}'); } catch(e) { return {}; } })() : {};
-    var _fpath = (typeof f !== 'undefined') ? f.path : null;
-    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, _sd, _fpath));
-    var codes = el.querySelectorAll('pre code');
-    for (var c = 0; c < codes.length; c++) {
-      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
-        codes[c].innerHTML = hlLean(codes[c].textContent || '');
-      }
-    }
-    nb.appendChild(el);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else if (b.type === 'code') {
-    var el2 = document.createElement('div');
-    el2.className = 'block-code';
-    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(b.source) + '</pre>';
-    nb.appendChild(el2);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else if (b.type === 'mermaid') {
-    var wrap = document.createElement('div');
-    wrap.className = 'block-mermaid';
-    nb.appendChild(wrap);
-    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'graphviz') {
-    var wrap2 = document.createElement('div');
-    wrap2.className = 'block-graphviz';
-    nb.appendChild(wrap2);
-    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done); });
-  } else if (b.type === 'image-file') {
-    var imgWrap = document.createElement('div');
-    imgWrap.className = 'lean-image-output';
-    var imgDataEl = document.getElementById('svg-data');
-    try {
-      var sd = imgDataEl ? JSON.parse(imgDataEl.textContent || '{}') : {};
-      var absPath = b.path;
-      if (typeof f !== 'undefined' && f.path) {
-        var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
-        var parts = f.path.split('/');
-        parts.pop();
-        var relParts = rel.split('/');
-        for (var k=0; k<relParts.length; k++) {
-          if (relParts[k] === '.') continue;
-          if (relParts[k] === '..') parts.pop();
-          else parts.push(relParts[k]);
-        }
-        absPath = parts.join('/');
-      }
-      var uri = sd[absPath] || sd[b.path];
-      if (uri) {
-        var imgEl = document.createElement('img');
-        imgEl.src = uri;
-        imgEl.alt = b.path || '';
-        imgEl.style.maxWidth = '100%';
-        imgWrap.appendChild(imgEl);
-      } else { imgWrap.style.color = '#94a3b8'; imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
-    } catch(e) { imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown'); }
-    nb.appendChild(imgWrap);
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  } else {
-    renderBlocksSeq(blocks, nb, i + 1, done);
-  }
 }
 
 document.querySelectorAll('input[name="view"]').forEach(function(radio) {
@@ -1281,7 +1073,7 @@ document.querySelectorAll('input[name="view"]').forEach(function(radio) {
     '<div id="lean-raw"><pre id="lean-raw-pre"></pre></div>',
     '</div></div>',
     // Embedded SVG data
-    '<script type="application/json" id="svg-data">' + allSvgDataJson + '<' + '/script>',
+    '<script type="application/json" id="image-data">' + allImageDataJson + '<' + '/script>',
     // Scripts
     '<script>' + esc(rendererJs) + '<' + '/script>',
     '<script>' + esc(viewerJs) + '<' + '/script>',

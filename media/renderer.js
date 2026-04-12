@@ -348,3 +348,378 @@ const MATHJAX_CONFIG = {
     startup: { typeset: false }
 };
 
+<<<<<<< HEAD
+=======
+// ----------------------------------------------------------------
+// Lean comment parser (port of leanCommentParser.ts)
+// ----------------------------------------------------------------
+function trimEmptyLines(code) {
+    const lines = code.split('\n');
+    let s = 0;
+    while (s < lines.length && lines[s].trim() === '') s++;
+    let e = lines.length - 1;
+    while (e >= 0 && lines[e].trim() === '') e--;
+    if (s > e) return '';
+    return lines.slice(s, e + 1).join('\n');
+}
+
+function dedent(str) {
+    const lines = str.split('\n');
+    let minIndent = Infinity;
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim().length === 0) continue;
+        const m = line.match(/^\s*/);
+        const indent = m ? m[0].length : 0;
+        if (indent < minIndent) minIndent = indent;
+    }
+    if (minIndent === Infinity) minIndent = 0;
+    return lines.map((line, idx) => {
+        if (idx === 0) return line.trim();
+        if (line.trim().length === 0) return '';
+        return line.length >= minIndent ? line.slice(minIndent) : line.trim();
+    }).join('\n').trim();
+}
+
+function findDocCommentEnd(text, startPos) {
+    let pos = startPos;
+    let inlineTickCount = null;
+    let inFence = false;
+    while (pos < text.length) {
+        const ch = text[pos];
+        if (ch === '`') {
+            let run = 1;
+            while (pos + run < text.length && text[pos + run] === '`') run++;
+            if (inlineTickCount === null) {
+                if (run >= 3) {
+                    let i = pos - 1;
+                    while (i >= 0 && text[i] !== '\n') i--;
+                    const prefix = text.slice(i + 1, pos);
+                    if (/^\s*$/.test(prefix)) { inFence = !inFence; pos += run; continue; }
+                }
+                if (!inFence) { inlineTickCount = run; pos += run; continue; }
+            } else {
+                if (run === inlineTickCount) { inlineTickCount = null; pos += run; continue; }
+            }
+            pos += run; continue;
+        }
+        const next = (pos + 1 < text.length) ? text[pos + 1] : '';
+        if (!inFence && inlineTickCount === null && ch === '-' && next === '/') return pos;
+        pos += 1;
+    }
+    return -1;
+}
+
+function splitLeanDocComments(text) {
+    const blocks = [];
+    let pos = 0, last = 0;
+
+    function pushCode(code) {
+        const lines = code.split('\n');
+        let s = 0;
+        while (s < lines.length && lines[s].trim() === '') s++;
+        const rawStartLine = text.slice(0, last).split('\n').length - 1;
+        const startLine = rawStartLine + s;
+        const trimmedCode = trimEmptyLines(code);
+        const trimmedLineCount = trimmedCode.split('\n').length;
+        const endLine = startLine + (trimmedLineCount > 0 ? trimmedLineCount - 1 : 0);
+        blocks.push({ type: 'code', source: trimmedCode, range: { startLine, endLine } });
+    }
+
+    function pushComment(kind, content, startOffset) {
+        const dedentedContent = dedent(content);
+        const startLine = text.slice(0, startOffset).split('\n').length - 1;
+        const endLine = startLine + (content.split('\n').length - 1);
+        blocks.push({ type: kind, content: dedentedContent, range: { startLine, endLine } });
+    }
+
+    while (pos < text.length) {
+        const nextModule = text.indexOf('/-!', pos);
+        const nextDoc = text.indexOf('/--', pos);
+        let start = -1, kind = null;
+        if (nextModule !== -1 && (nextDoc === -1 || nextModule < nextDoc)) { start = nextModule; kind = 'module-doc'; }
+        else if (nextDoc !== -1) { start = nextDoc; kind = 'doc-comment'; }
+        if (start === -1) break;
+        if (start > last) pushCode(text.slice(last, start));
+        const contentStart = start + 3;
+        const end = findDocCommentEnd(text, contentStart);
+        if (end === -1) { pushCode(text.slice(start)); last = text.length; break; }
+        pushComment(kind, text.slice(contentStart, end), start);
+        pos = end + 2; last = pos;
+    }
+    if (last < text.length) pushCode(text.slice(last));
+
+    return blocks.filter(b => {
+        if (b.type === 'code') return b.source.trim().length > 0;
+        if (b.type === 'mermaid') return b.source.trim().length > 0;
+        if (b.type === 'graphviz') return b.source.trim().length > 0;
+        if (b.type === 'image-file') return b.path.trim().length > 0;
+        return b.content.trim().length > 0;
+    });
+}
+
+function splitDiagramBlocks(content) {
+    const result = [];
+    // Note: backticks written as \x60 to avoid breaking HTML script-tag embedding
+    const TICK3 = '\x60\x60\x60';
+    const diagramRe = new RegExp('^' + TICK3 + '(mermaid|graphviz|dot)\\s*\\n([\\s\\S]*?)^' + TICK3 + '\\s*$', 'gm');
+    const imageRe = /^@image\s+(.+)$/gm;
+
+    // Collect all matches with positions
+    var matches = [];
+    var match;
+    while ((match = diagramRe.exec(content)) !== null) {
+        var lang = match[1];
+        var blockType = lang === 'mermaid' ? 'mermaid' : 'graphviz';
+        matches.push({ index: match.index, end: diagramRe.lastIndex, type: blockType, data: match[2] });
+    }
+    while ((match = imageRe.exec(content)) !== null) {
+        matches.push({ index: match.index, end: imageRe.lastIndex, type: 'image-file', data: match[1].trim() });
+    }
+    matches.sort(function (a, b) { return a.index - b.index; });
+
+    var lastIndex = 0;
+    for (var i = 0; i < matches.length; i++) {
+        var m = matches[i];
+        var textContent = content.substring(lastIndex, m.index);
+        if (textContent.trim().length > 0) result.push({ type: 'text', content: textContent.trim() });
+
+        if (m.type === 'image-file') {
+            result.push({ type: 'image-file', path: m.data });
+        } else {
+            if (m.data.trim().length > 0) {
+                result.push({ type: m.type, source: trimEmptyLines(m.data) });
+            }
+        }
+        lastIndex = m.end;
+    }
+    if (lastIndex < content.length) {
+        var remaining = content.substring(lastIndex);
+        if (remaining.trim().length > 0) result.push({ type: 'text', content: remaining.trim() });
+    }
+    if (result.length === 0 && content.trim().length > 0)
+        result.push({ type: 'text', content: content.trim() });
+    return result;
+}
+
+function expandCommentBlock(block) {
+    if (block.type !== 'module-doc' && block.type !== 'doc-comment') return [block];
+    const subBlocks = splitDiagramBlocks(block.content);
+    if (subBlocks.length === 1 && subBlocks[0].type === 'text') return [block];
+    return subBlocks.map(sub => {
+        if (sub.type === 'text') return { type: block.type, content: sub.content, range: block.range };
+        if (sub.type === 'image-file') return { type: 'image-file', path: sub.path, range: block.range };
+        return { type: sub.type, source: sub.source, range: block.range };
+    });
+}
+
+/**
+ * Replace inline @image markers in markdown content with <img> tags.
+ * Used for @image inside table cells which splitDiagramBlocks can't extract.
+ * @param {string} content - markdown content
+ * @param {Object} imageData - map of relative path -> data URI string
+ * @returns {string} content with @image replaced
+ */
+function inlineImageMarkers(content, imageData, textFilePath) {
+    if (!imageData || !content) return content;
+    return content.replace(/@image\s+([\S]+)/g, function (_m, filePath) {
+        var rel = filePath.trim();
+        var absPath = rel;
+        if (textFilePath && (rel.startsWith('./') || rel.startsWith('../'))) {
+           var parts = textFilePath.split('/');
+           parts.pop();
+           var relParts = rel.split('/');
+           for (var i=0; i<relParts.length; i++) {
+             if (relParts[i] === '.') continue;
+             if (relParts[i] === '..') parts.pop();
+             else parts.push(relParts[i]);
+           }
+           absPath = parts.join('/');
+        } else if (textFilePath && !rel.startsWith('/')) {
+           var parts2 = textFilePath.split('/');
+           parts2.pop();
+           parts2.push(rel);
+           absPath = parts2.join('/');
+        }
+
+        var dataUri = imageData[absPath] || imageData[rel] || imageData['./' + rel];
+        if (dataUri) {
+            return '<img src="' + dataUri + '" alt="' + rel + '" style="max-width:100%">';
+        }
+        return '*Image not found: ' + rel + '*';
+    });
+}
+
+function parseLean(text) {
+    return splitLeanDocComments(text).flatMap(b => expandCommentBlock(b));
+}
+
+// ================================================================
+// renderBlocksSeq — Single Source of Truth block renderer
+// Used by BOTH the VSCode WebView (main.js) AND HTML export.
+// Renders parsed blocks sequentially into a DOM container.
+//
+// @param {Array} blocks  - parsed block array from parseLean()
+// @param {HTMLElement} nb - target container (#notebook)
+// @param {number} i       - current index (start with 0)
+// @param {Function} done  - callback when all blocks rendered
+// @param {Object} [imageData]  - image data map {path: dataURI}
+// @param {string} [filePath] - source file path for relative image resolution
+// ================================================================
+function renderBlocksSeq(blocks, nb, i, done, imageData, filePath) {
+  if (i >= blocks.length) { done(); return; }
+  var b = blocks[i];
+
+  if (b.type === 'module-doc' || b.type === 'doc-comment') {
+    var cls = b.type === 'module-doc' ? 'block-module-doc' : 'block-doc-comment';
+    var el = document.createElement('div');
+    el.className = cls;
+    var sd = imageData || {};
+    var fp = filePath || null;
+    el.innerHTML = mdToHtml(inlineImageMarkers(b.content, sd, fp));
+    var codes = el.querySelectorAll('pre code');
+    for (var c = 0; c < codes.length; c++) {
+      if (codes[c].classList.contains('language-lean') || codes[c].classList.contains('language-lean4')) {
+        codes[c].innerHTML = hlLean(codes[c].textContent || '');
+      }
+    }
+    nb.appendChild(el);
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+
+  } else if (b.type === 'code') {
+    var el2 = document.createElement('div');
+    el2.className = 'block-code';
+
+    // Support block.outputs (WebView #eval results).
+    // In HTML export, outputs is undefined/empty — this is safely skipped.
+    var source = b.source;
+    var outputs = b.outputs || [];
+    var inlineOutputs = [];
+    var richOutputs = [];
+    for (var oi = 0; oi < outputs.length; oi++) {
+      var o = outputs[oi];
+      if (o.severity === -1) {
+        inlineOutputs.push(o);
+      } else if (typeof hasEvalSVG === 'function' && hasEvalSVG(o.content)) {
+        richOutputs.push(o);
+      } else {
+        inlineOutputs.push(o);
+      }
+    }
+
+    // Build display source with interleaved inline outputs
+    var lines = source.split(/\r?\n/);
+    var resultLines = [];
+    var inlineByLine = {};
+    for (var il = 0; il < inlineOutputs.length; il++) {
+      var lineNum = inlineOutputs[il].line;
+      if (!inlineByLine[lineNum]) inlineByLine[lineNum] = [];
+      inlineByLine[lineNum].push(inlineOutputs[il]);
+    }
+    for (var li = 0; li < lines.length; li++) {
+      resultLines.push(lines[li]);
+      if (inlineByLine[li]) {
+        for (var oli = 0; oli < inlineByLine[li].length; oli++) {
+          var out = inlineByLine[li][oli];
+          if (out.severity === -1) {
+            resultLines.push('-- \u2713');
+          } else {
+            resultLines.push('-- Evaluated: ' + out.content);
+          }
+        }
+      }
+    }
+    var displaySource = resultLines.join('\n');
+
+    el2.innerHTML = '<div class="block-code-header">lean4</div><pre class="lean-source">' + hlLean(displaySource) + '</pre>';
+
+    // Render rich outputs (SVG-containing) after the code block
+    if (richOutputs.length > 0 && typeof parseEvalOutput === 'function') {
+      for (var ri = 0; ri < richOutputs.length; ri++) {
+        var segments = parseEvalOutput(richOutputs[ri].content);
+        for (var si = 0; si < segments.length; si++) {
+          var seg = segments[si];
+          if (seg.type === 'svg') {
+            var svgDiv = document.createElement('div');
+            svgDiv.className = 'lean-svg-output';
+            svgDiv.innerHTML = seg.content;
+            el2.appendChild(svgDiv);
+          } else {
+            var textDiv = document.createElement('div');
+            textDiv.className = 'lean-eval-text';
+            var textPre = document.createElement('pre');
+            textPre.textContent = seg.content;
+            textDiv.appendChild(textPre);
+            el2.appendChild(textDiv);
+          }
+        }
+      }
+    }
+
+    nb.appendChild(el2);
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+
+  } else if (b.type === 'mermaid') {
+    var wrap = document.createElement('div');
+    wrap.className = 'block-mermaid';
+    nb.appendChild(wrap);
+    renderMermaid(b.source, wrap).then(function() { renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath); });
+
+  } else if (b.type === 'graphviz') {
+    var wrap2 = document.createElement('div');
+    wrap2.className = 'block-graphviz';
+    nb.appendChild(wrap2);
+    renderGraphviz(b.source, wrap2).then(function() { renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath); });
+
+  } else if (b.type === 'image-file') {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'lean-image-output';
+
+    // WebView path: NotebookPanel sets block.content to data URI directly
+    if (b.content) {
+      var imgEl = document.createElement('img');
+      imgEl.src = b.content;
+      imgEl.alt = b.path || '';
+      imgEl.style.maxWidth = '100%';
+      imgWrap.appendChild(imgEl);
+    } else {
+      // HTML export path: lookup from imageData map
+      var sd2 = imageData || {};
+      try {
+        var absPath = b.path;
+        if (filePath) {
+          var rel = (b.path.startsWith('./') || b.path.startsWith('../')) ? b.path : './' + b.path;
+          var parts = filePath.split('/');
+          parts.pop();
+          var relParts = rel.split('/');
+          for (var k = 0; k < relParts.length; k++) {
+            if (relParts[k] === '.') continue;
+            if (relParts[k] === '..') parts.pop();
+            else parts.push(relParts[k]);
+          }
+          absPath = parts.join('/');
+        }
+        var uri = sd2[absPath] || sd2[b.path];
+        if (uri) {
+          var imgEl2 = document.createElement('img');
+          imgEl2.src = uri;
+          imgEl2.alt = b.path || '';
+          imgEl2.style.maxWidth = '100%';
+          imgWrap.appendChild(imgEl2);
+        } else {
+          imgWrap.style.color = '#94a3b8';
+          imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown');
+        }
+      } catch(e) {
+        imgWrap.textContent = 'Image not found: ' + (b.path || 'unknown');
+      }
+    }
+    nb.appendChild(imgWrap);
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+
+  } else {
+    renderBlocksSeq(blocks, nb, i + 1, done, imageData, filePath);
+  }
+}
+
+>>>>>>> single-truth-refactor
