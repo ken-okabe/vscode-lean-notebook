@@ -22,12 +22,23 @@ async function main() {
     logLevel: 'info',
   });
 
+  const parserCtx = await esbuild.context({
+    entryPoints: ['src/leanCommentParser.ts'],
+    bundle: true,
+    outfile: 'media/leanCommentParser.js',
+    format: 'iife',
+    globalName: 'LeanParser',
+    sourcemap: !production,
+    minify: production,
+    logLevel: 'info',
+  });
+
   if (watch) {
-    await ctx.watch();
+    await Promise.all([ctx.watch(), parserCtx.watch()]);
     console.log('Watching for changes...');
   } else {
-    await ctx.rebuild();
-    await ctx.dispose();
+    await Promise.all([ctx.rebuild(), parserCtx.rebuild()]);
+    await Promise.all([ctx.dispose(), parserCtx.dispose()]);
     console.log('Build complete!');
   }
 }

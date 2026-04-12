@@ -13,6 +13,7 @@
   <script src="./_libs/marked.min.js"></script>
   <script src="./_libs/mermaid.min.js"></script>
   <script src="./_libs/viz-standalone.js" async></script>
+  <script src="./leanCommentParser.js"></script>
   <style>
     /* Injected from style.css by htmlExporter.ts — do NOT edit here. Edit style.css instead. */
     %%STYLES%%
@@ -138,7 +139,7 @@
       const rawPre = document.getElementById('lean-raw-pre');
       rawPre.innerHTML = hlLean(el.textContent);
 
-      const blocks = parseLean(el.textContent);
+      const blocks = LeanParser.parseLean(el.textContent);
       render(blocks);
 
       const nb = document.getElementById('notebook');

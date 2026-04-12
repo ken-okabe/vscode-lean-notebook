@@ -241,7 +241,16 @@ function loadFile(index) {
     var headings = nb.querySelectorAll('h1,h2,h3');
     for (var h = 0; h < headings.length; h++) {
       var id = 'h' + hi++; headings[h].id = id;
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\\n';
+      var clone = headings[h].cloneNode(true);
+      var anchors = clone.querySelectorAll('a');
+      for (var a = 0; a < anchors.length; a++) {
+        var anchor = anchors[a];
+        while (anchor.firstChild) anchor.parentNode.insertBefore(anchor.firstChild, anchor);
+        anchor.parentNode.removeChild(anchor);
+      }
+      var labelHtml = clone.innerHTML || '';
+      var plainLabel = clone.textContent || '';
+      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '" title="' + plainLabel + '">' + labelHtml + '</a>\\n';
     }
     document.getElementById('toc').innerHTML = tocHtml;
     var h1 = nb.querySelector('h1');
@@ -252,7 +261,7 @@ function loadFile(index) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
-    typesetMath(nb);
+    typesetMath(document.body);
   });
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
@@ -825,7 +834,16 @@ function loadFile(index) {
     var headings = nb.querySelectorAll('h1,h2,h3');
     for (var h = 0; h < headings.length; h++) {
       var id = 'h' + hi++; headings[h].id = id;
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\\n';
+      var clone = headings[h].cloneNode(true);
+      var anchors = clone.querySelectorAll('a');
+      for (var a = 0; a < anchors.length; a++) {
+        var anchor = anchors[a];
+        while (anchor.firstChild) anchor.parentNode.insertBefore(anchor.firstChild, anchor);
+        anchor.parentNode.removeChild(anchor);
+      }
+      var labelHtml = clone.innerHTML || '';
+      var plainLabel = clone.textContent || '';
+      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '" title="' + plainLabel + '">' + labelHtml + '</a>\\n';
     }
     document.getElementById('toc').innerHTML = tocHtml;
     var h1 = nb.querySelector('h1');
@@ -836,7 +854,7 @@ function loadFile(index) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
-    typesetMath(nb);
+    typesetMath(document.body);
   });
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';
@@ -1124,7 +1142,16 @@ function loadFile(index) {
     var headings = nb.querySelectorAll('h1,h2,h3');
     for (var h = 0; h < headings.length; h++) {
       var id = 'h' + hi++; headings[h].id = id;
-      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '">' + headings[h].textContent + '</a>\\n';
+      var clone = headings[h].cloneNode(true);
+      var anchors = clone.querySelectorAll('a');
+      for (var a = 0; a < anchors.length; a++) {
+        var anchor = anchors[a];
+        while (anchor.firstChild) anchor.parentNode.insertBefore(anchor.firstChild, anchor);
+        anchor.parentNode.removeChild(anchor);
+      }
+      var labelHtml = clone.innerHTML || '';
+      var plainLabel = clone.textContent || '';
+      tocHtml += '<a href="#' + id + '" class="' + headings[h].tagName.toLowerCase() + '" title="' + plainLabel + '">' + labelHtml + '</a>\\n';
     }
     document.getElementById('toc').innerHTML = tocHtml;
     var h1 = nb.querySelector('h1');
@@ -1135,7 +1162,7 @@ function loadFile(index) {
       document.getElementById('doc-title').textContent = f.name;
       document.title = f.name + ' \\u2014 Lean Notebook';
     }
-    typesetMath(nb);
+    typesetMath(document.body);
   });
   document.getElementById('notebook').style.display = '';
   document.getElementById('lean-raw').style.display = 'none';

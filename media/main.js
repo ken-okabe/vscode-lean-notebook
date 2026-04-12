@@ -372,11 +372,26 @@ try {
             }
             const tag = h.tagName.toLowerCase(); // h1 / h2 / h3
             const cls = tag;                     // .h1 / .h2 / .h3
-            const label = h.textContent || '';
-            tocHtml += `<a href="#${h.id}" class="${cls}" title="${label}">${label}</a>\n`;
+            
+            // Clone heading and strip anchors so links aren't nested in TOC
+            const clone = h.cloneNode(true);
+            const anchors = clone.querySelectorAll('a');
+            anchors.forEach(a => {
+                while (a.firstChild) a.parentNode.insertBefore(a.firstChild, a);
+                a.parentNode.removeChild(a);
+            });
+            const labelHtml = clone.innerHTML || '';
+            const plainLabel = clone.textContent || '';
+            
+            tocHtml += `<a href="#${h.id}" class="${cls}" title="${plainLabel}">${labelHtml}</a>\n`;
         });
 
-        toc.innerHTML = tocHtml;
+        if (toc.innerHTML !== tocHtml) {
+            toc.innerHTML = tocHtml;
+            if (typeof typesetMath !== 'undefined') {
+                typesetMath(toc).catch(e => console.error("MathJax TOC error:", e));
+            }
+        }
     }
 
     // Observe DOM mutations to rebuild TOC

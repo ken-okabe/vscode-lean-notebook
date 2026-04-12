@@ -365,6 +365,7 @@ export class NotebookPanel {
         // Vendors
         const vanUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'van.min.js'));
         const markedUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'marked.min.js'));
+        const leanCommentParserUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'leanCommentParser.js'));
 
         // MathJax (local, from _libs/)
         const mathJaxUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', '_libs', 'tex-svg.js'));
@@ -398,6 +399,7 @@ export class NotebookPanel {
             <script id="MathJax-script" async src="${mathJaxUri}"></script>
             <script src="${mermaidUri}"></script>
             <script src="${vizUri}" async></script>
+            <script src="${leanCommentParserUri}"></script>
 
             <title>Notebook Preview</title>
         </head>

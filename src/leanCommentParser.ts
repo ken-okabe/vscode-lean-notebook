@@ -1,4 +1,6 @@
-import * as vscode from 'vscode';
+export interface TextDocumentLike {
+  positionAt(offset: number): { line: number; character: number };
+}
 
 export type LeanLexBlock =
   | { type: 'code'; source: string; range: { startLine: number; endLine: number } }
@@ -17,7 +19,7 @@ export type LeanLexBlock =
  * This is NOT elaboration/compilation. It is a purely textual scan with enough
  * awareness to ignore `-/` inside inline code / fenced code blocks.
  */
-export function splitLeanDocComments(text: string, document?: vscode.TextDocument): LeanLexBlock[] {
+export function splitLeanDocComments(text: string, document?: TextDocumentLike): LeanLexBlock[] {
   const blocks: LeanLexBlock[] = [];
 
   let pos = 0;
@@ -242,8 +244,47 @@ function splitDiagramBlocks(content: string): SubBlock[] {
 }
 
 /**
+ * Split markdown content into sections based on H1 and H2 headings.
+ * Ignores headings inside fenced code blocks.
+ */
+export function splitMarkdownSections(content: string): string[] {
+  const lines = content.split('\n');
+  const sections: string[] = [];
+  let currentSection: string[] = [];
+
+  let inFence = false;
+  let fenceChar = '';
+
+  for (const line of lines) {
+    const fenceMatch = line.match(/^(\s*)(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      if (!inFence) {
+        inFence = true;
+        fenceChar = fenceMatch[2][0];
+      } else if (line.trim().startsWith(fenceChar.repeat(3))) {
+        inFence = false;
+      }
+    }
+
+    if (!inFence && /^#{1,2}\s/.test(line)) {
+      if (currentSection.length > 0) {
+        sections.push(currentSection.join('\n'));
+        currentSection = [];
+      }
+    }
+    currentSection.push(line);
+  }
+
+  if (currentSection.length > 0) {
+    sections.push(currentSection.join('\n'));
+  }
+
+  return sections;
+}
+
+/**
  * Expand a comment block into multiple blocks if it contains diagram blocks
- * (mermaid or graphviz/dot).
+ * (mermaid or graphviz/dot) or Markdown headings.
  */
 export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
   if (block.type !== 'module-doc' && block.type !== 'doc-comment') {
@@ -252,20 +293,20 @@ export function expandCommentBlock(block: LeanLexBlock): LeanLexBlock[] {
 
   const subBlocks = splitDiagramBlocks(block.content);
 
-  // If only one text block, return original
-  if (subBlocks.length === 1 && subBlocks[0].type === 'text') {
-    return [block];
-  }
-
   // Otherwise, expand into multiple blocks
   const result: LeanLexBlock[] = [];
   for (const sub of subBlocks) {
     if (sub.type === 'text') {
-      result.push({
-        type: block.type,
-        content: sub.content,
-        range: block.range // Use same range (approximate)
-      });
+      const sections = splitMarkdownSections(sub.content);
+      for (const sec of sections) {
+        if (sec.trim().length > 0) {
+          result.push({
+            type: block.type as any, // 'module-doc' or 'doc-comment'
+            content: sec.trim(),
+            range: block.range
+          });
+        }
+      }
     } else if (sub.type === 'svg-file') {
       result.push({
         type: 'svg-file',
@@ -355,4 +396,12 @@ function findDocCommentEnd(text: string, startPos: number): number {
   }
 
   return -1;
+}
+
+/**
+ * Parse Lean text into a sequence of lexical blocks, dividing docs and code,
+ * and expanding diagrams and markdown sections.
+ */
+export function parseLean(text: string, document?: TextDocumentLike): LeanLexBlock[] {
+  return splitLeanDocComments(text, document).flatMap(b => expandCommentBlock(b));
 }

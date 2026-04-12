@@ -1,4 +1,5 @@
 import { generateBlockId } from './utils/hashing';
+import { splitMarkdownSections } from './leanCommentParser';
 
 /**
  * Parse Markdown files into blocks for notebook-style rendering
@@ -63,10 +64,15 @@ export function parseMarkdownFile(content: string): MarkdownNotebookBlock[] {
         // 1. Everything before this code block is TEXT
         const textContent = content.substring(lastIndex, match.index);
         if (textContent.trim().length > 0) {
-            blocks.push({
-                type: 'text',
-                content: textContent.trim()
-            });
+            const sections = splitMarkdownSections(textContent);
+            for (const sec of sections) {
+                if (sec.trim().length > 0) {
+                    blocks.push({
+                        type: 'text',
+                        content: sec.trim()
+                    });
+                }
+            }
         }
 
         // 2. The matched code block
@@ -95,10 +101,15 @@ export function parseMarkdownFile(content: string): MarkdownNotebookBlock[] {
     if (lastIndex < content.length) {
         const remaining = content.substring(lastIndex);
         if (remaining.trim().length > 0) {
-            blocks.push({
-                type: 'text',
-                content: remaining.trim()
-            });
+            const sections = splitMarkdownSections(remaining);
+            for (const sec of sections) {
+                if (sec.trim().length > 0) {
+                    blocks.push({
+                        type: 'text',
+                        content: sec.trim()
+                    });
+                }
+            }
         }
     }
 
